@@ -70,6 +70,7 @@ body {
 
 body::after {
   content: ''; position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
   pointer-events: none; z-index: 999;
 }
 
@@ -385,10 +386,26 @@ body::after {
 ══════════════════════════════════════════ */
 #screen-settings { gap: 16px; overflow-y: auto; }
 
+.done-nudge {
+  font-size: 11px; color: var(--muted); text-align: center;
+  padding: 4px 0; letter-spacing: 0.03em;
+}
+
+.caps-row { display: flex; gap: 10px; }
+.caps-field-wrap { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.caps-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.caps-field {
+  padding: 10px 12px;
+  background: var(--paper-dark); border: 1px solid var(--border);
+  border-radius: 3px; font-family: 'DM Mono', monospace;
+  font-size: 14px; color: var(--ink); outline: none; width: 100%;
+  transition: border-color 0.15s, background 0.2s;
+  -webkit-appearance: none;
+}
+.caps-field:focus { border-color: var(--gold); }
+
 .sg { display: flex; flex-direction: column; gap: 8px; }
 .sg-lbl { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-
-.theme-row { display: flex; gap: 7px; }
 .theme-opt {
   flex: 1; padding: 9px 8px; border-radius: 3px; border: 1px solid var(--border);
   font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.05em;
@@ -583,6 +600,8 @@ body::after {
     </div>
   </div>
   <div class="done-actions">
+    <div class="done-nudge" id="done-nudge" style="display:none"></div>
+    <button class="btn btn-ghost" id="btn-continue" onclick="continueSession()" style="display:none">→ Continue session</button>
     <button class="btn btn-primary" onclick="startStudy()">→ Study Due Again</button>
     <button class="btn btn-ghost"   onclick="goHome()">← Home</button>
   </div>
@@ -605,7 +624,22 @@ body::after {
   </div>
 
   <div class="sg">
-    <div class="sg-lbl">Claude API Key</div>
+    <div class="sg-lbl">Session Caps</div>
+    <div class="caps-row">
+      <div class="caps-field-wrap">
+        <label class="caps-label">New words</label>
+        <input class="caps-field" id="cap-new" type="number" min="1" max="50" value="15">
+      </div>
+      <div class="caps-field-wrap">
+        <label class="caps-label">Reviews</label>
+        <input class="caps-field" id="cap-rev" type="number" min="1" max="200" value="30">
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="align-self:flex-start" onclick="saveCaps()">Save caps</button>
+    <div class="api-note">Applies to "Study Due Cards". "Study All" ignores caps.</div>
+  </div>
+
+  <div class="sg">
     <div class="api-row">
       <input class="api-field" id="api-field" type="password" placeholder="sk-ant-…"
              autocomplete="off" autocorrect="off" spellcheck="false">
@@ -655,7 +689,7 @@ applyTheme();
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
-const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme' };
+const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps' };
 
 const load = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
 const save = (k,v) => localStorage.setItem(k, JSON.stringify(v));
@@ -666,10 +700,17 @@ let wordMeta = load(K.meta)   || {};
 // ══════════════════════════════════════════════
 //  SRS  (SM-2)
 // ══════════════════════════════════════════════
-const newCard = () => ({ interval:0, easeFactor:2.5, repetitions:0, due:Date.now(), lapses:0 });
+const newCard = () => ({ interval:0, easeFactor:2.5, repetitions:0, due:Date.now(), lapses:0, correctStreak:0, graduated:false, importedAt:Date.now() });
 
 function applyRating(c, q) {
   const smQ = [0,2,4,5][q];
+  // Track consecutive correct streak for graduation (Good or Easy = correct)
+  if (q >= 2) {
+    c.correctStreak = (c.correctStreak || 0) + 1;
+    if (c.correctStreak >= 2) c.graduated = true;
+  } else {
+    c.correctStreak = 0; // Again or Hard resets streak
+  }
   if (smQ < 3) { c.repetitions = 0; c.interval = 1; c.lapses = (c.lapses||0) + 1; }
   else {
     c.interval = c.repetitions === 0 ? 1 : c.repetitions === 1 ? 4 : Math.round(c.interval * c.easeFactor);
@@ -828,17 +869,21 @@ function renderWeakScreen() {
 function updateHomeUI() {
   const now = Date.now();
   const words = Object.keys(db);
-  const due = words.filter(w => (db[w].due||0) <= now);
-  const learned = words.filter(w => (db[w].repetitions||0) > 0);
+  const caps = getCaps();
+
+  const dueReviews = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now);
+  const newWords   = words.filter(w => !db[w]?.graduated);
+  const learned    = words.filter(w => db[w]?.graduated);
 
   document.getElementById('hs-total').textContent   = words.length;
-  document.getElementById('hs-due').textContent     = due.length;
+  document.getElementById('hs-due').textContent     = Math.min(dueReviews.length, caps.reviews) + Math.min(newWords.length, caps.newWords);
   document.getElementById('hs-learned').textContent = learned.length;
 
+  const totalDue = dueReviews.length + newWords.length;
   const btn = document.getElementById('btn-study');
-  btn.disabled    = due.length === 0;
-  btn.textContent = due.length > 0
-    ? `→ Study ${due.length} Due Card${due.length!==1?'s':''}`
+  btn.disabled    = totalDue === 0;
+  btn.textContent = totalDue > 0
+    ? `→ Study ${Math.min(dueReviews.length, caps.reviews)}r + ${Math.min(newWords.length, caps.newWords)}n`
     : '→ No Cards Due';
 
   renderStreak();
@@ -858,8 +903,13 @@ function handleMd(e) {
     const words = parseWordBank(ev.target.result);
     if (!words.length) { showToast('Could not parse any words'); return; }
     let added = 0;
+    const importTime = Date.now();
     for (const w of words) {
-      if (!db[w.word]) { db[w.word] = newCard(); added++; }
+      if (!db[w.word]) {
+        db[w.word] = newCard();
+        db[w.word].importedAt = importTime - added; // slight offset preserves order within batch
+        added++;
+      }
       wordMeta[w.word] = { furigana:w.furigana, definition:w.definition, jlpt:w.jlpt };
     }
     save(K.db, db); save(K.meta, wordMeta);
@@ -909,7 +959,18 @@ function goSettings() {
   const st = document.getElementById('api-status');
   st.textContent = key ? '✓ Key saved' : 'No key saved';
   st.className = 'api-status ' + (key ? 'ok' : '');
+  // Populate caps
+  const caps = getCaps();
+  document.getElementById('cap-new').value = caps.newWords;
+  document.getElementById('cap-rev').value = caps.reviews;
   showScreen('settings');
+}
+
+function saveCaps() {
+  const n = parseInt(document.getElementById('cap-new').value) || 15;
+  const r = parseInt(document.getElementById('cap-rev').value) || 30;
+  save(K.caps, { newWords: Math.max(1, Math.min(50, n)), reviews: Math.max(1, Math.min(200, r)) });
+  showToast('Session caps saved');
 }
 
 function saveApiKey() {
@@ -930,33 +991,80 @@ function confirmReset() {
 }
 
 // ══════════════════════════════════════════════
+//  SESSION CAPS
+// ══════════════════════════════════════════════
+function getCaps() {
+  return load(K.caps) || { newWords: 15, reviews: 30 };
+}
+
+// ══════════════════════════════════════════════
 //  STUDY
 // ══════════════════════════════════════════════
 let queue=[], cur=null, flipped=false;
 let sAgain=0, sGood=0, sReviewed=0, sTotal=0;
+let sessionCapped = false; // true when we hit the cap mid-session
+
+function isNew(w) {
+  // A card is "new" if it hasn't graduated (2 consecutive correct) yet
+  return !db[w]?.graduated;
+}
+
+function buildQueue(caps) {
+  const now = Date.now();
+  const allWords = Object.keys(db);
+
+  // Reviews: due cards that have graduated, sorted most overdue first
+  const reviews = allWords
+    .filter(w => db[w]?.graduated && (db[w].due||0) <= now)
+    .sort((a,b) => (db[a].due||0) - (db[b].due||0))
+    .slice(0, caps.reviews);
+
+  // New words: not yet graduated, sorted most recently imported first
+  const newWords = allWords
+    .filter(w => !db[w]?.graduated)
+    .sort((a,b) => (db[b].importedAt||0) - (db[a].importedAt||0))
+    .slice(0, caps.newWords);
+
+  // Interleave: roughly one new word per 2 reviews
+  const interleaved = [];
+  let ri = 0, ni = 0;
+  while (ri < reviews.length || ni < newWords.length) {
+    if (ri < reviews.length) interleaved.push(reviews[ri++]);
+    if (ri < reviews.length) interleaved.push(reviews[ri++]);
+    if (ni < newWords.length) interleaved.push(newWords[ni++]);
+  }
+
+  return interleaved.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
+}
 
 function startStudy() {
-  const due = Object.keys(db).filter(w => (db[w].due||0) <= Date.now());
-  if (!due.length) { showToast('No cards due right now'); return; }
-  beginSession(due);
+  const caps = getCaps();
+  const q = buildQueue(caps);
+  if (!q.length) { showToast('No cards due right now'); return; }
+  sessionCapped = true;
+  beginSession(q);
 }
 
 function studyAll() {
   const all = Object.keys(db);
   if (!all.length) { showToast('Import a word bank first'); return; }
-  beginSession(all);
+  sessionCapped = false;
+  // uncapped: all due reviews + all new, shuffled
+  const now = Date.now();
+  const due = all.filter(w => (db[w].due||0) <= now);
+  shuffle(due);
+  beginSession(due.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) })));
 }
 
 function beginSession(words) {
-  queue = words.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
-  shuffle(queue);
+  queue = words;
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
   showScreen('study'); nextCard();
 }
 
 function nextCard() {
   updateMini();
-  if (!queue.length) { endSession(); return; }
+  if (!queue.length) { endSession(false); return; }
   cur = queue.shift(); flipped = false;
 
   document.getElementById('card').classList.remove('flipped');
@@ -967,7 +1075,11 @@ function nextCard() {
   const jlpt = cur.jlpt||'';
   document.getElementById('card-jlpt-f').textContent   = jlpt;
   document.getElementById('card-jlpt-b').textContent   = jlpt;
-  document.getElementById('card-ctr').textContent      = `${sReviewed+1} / ${sTotal}`;
+
+  // Show NEW badge for ungraduated cards
+  const ctr = document.getElementById('card-ctr');
+  ctr.textContent = `${sReviewed+1} / ${sTotal}`;
+  ctr.style.color = !db[cur.word]?.graduated ? 'var(--green)' : 'var(--muted)';
 
   // Reset sentence panel
   const panel = document.getElementById('sent-panel');
@@ -998,17 +1110,44 @@ function rate(q) {
   applyRating(db[cur.word], q);
   save(K.db, db);
   sReviewed++;
-  if (q === 0) { sAgain++; queue.splice(Math.min(3,queue.length), 0, cur); sTotal++; }
-  else           sGood++;
+  if (q === 0) {
+    sAgain++;
+    // Re-insert Again cards near front only if not graduated yet
+    // (graduated cards get rescheduled by SRS, but in same session we re-show once)
+    queue.splice(Math.min(3,queue.length), 0, { ...cur, ...db[cur.word] });
+    sTotal++;
+  } else {
+    sGood++;
+  }
   nextCard();
 }
 
-function endSession() {
+function endSession(hitCap) {
   touchStreak();
   document.getElementById('done-rev').textContent   = sReviewed;
   document.getElementById('done-again').textContent = sAgain;
   document.getElementById('done-good').textContent  = sGood;
+
+  // Show remaining counts for soft nudge
+  const now = Date.now();
+  const remainingDue = Object.keys(db).filter(w => db[w]?.graduated && (db[w].due||0) <= now).length;
+  const remainingNew = Object.keys(db).filter(w => !db[w]?.graduated).length;
+  const nudgeEl = document.getElementById('done-nudge');
+  if (sessionCapped && (remainingDue > 0 || remainingNew > 0)) {
+    nudgeEl.style.display = 'block';
+    nudgeEl.textContent = `${remainingDue} reviews + ${remainingNew} new words remaining`;
+    document.getElementById('btn-continue').style.display = 'flex';
+  } else {
+    nudgeEl.style.display = 'none';
+    document.getElementById('btn-continue').style.display = 'none';
+  }
+
   showScreen('done');
+}
+
+function continueSession() {
+  // Load another capped batch
+  startStudy();
 }
 
 function updateMini() {
