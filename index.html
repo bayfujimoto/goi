@@ -31,6 +31,15 @@
   --card-bg:    #ffffff;
   --card-back:  #f5f0e8;
   --shadow:     #d4c9b8;
+/* Arc segment color tokens */
+--seg-new:     #93b09e;
+--seg-review:  #a89f94;
+--seg-overdue: #b89080;
+--seg-done:    #c0a060;
+--seg-track:   #e6dfd3;
+--num-new:     #4a7a5e;
+--num-review:  #6a6050;
+--num-overdue: #8a5040;
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -54,6 +63,14 @@
   --card-bg:    #24201a;
   --card-back:  #1e1a14;
   --shadow:     #0a0806;
+  --seg-new:     #3e6050;
+  --seg-review:  #5a5044;
+  --seg-overdue: #6e4030;
+  --seg-done:    #7a6028;
+  --seg-track:   #2a2418;
+  --num-new:     #6a9a7e;
+  --num-review:  #8a8070;
+  --num-overdue: #a07060;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -158,24 +175,39 @@ body::after {
 .week-dot.today   { border-color: var(--muted); }
 .week-day-lbl { font-size: 8px; color: var(--muted); letter-spacing: 0.02em; line-height: 1; }
 
-/* Stats */
-.stats-row {
+/* Arc */
+.arc-block {
+  display: flex; flex-direction: column; gap: 12px;
+  flex-shrink: 0;
+}
+.arc-svg { width: 100%; overflow: visible; display: block; }
+.arc-stats {
+  display: flex; justify-content: space-between; padding: 0 2px;
+}
+.arc-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+.arc-stat-value { font-family: 'Shippori Mincho', serif; font-size: 22px; font-weight: 600; line-height: 1; }
+.arc-stat-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
+.val-overdue { color: var(--num-overdue); }
+.val-review  { color: var(--num-review);  }
+.val-new     { color: var(--num-new);     }
+.lbl-overdue { color: var(--num-overdue); opacity: 0.8; }
+.lbl-review  { color: var(--num-review);  opacity: 0.8; }
+.lbl-new     { color: var(--num-new);     opacity: 0.8; }
+
+/* Summary stats row */
+.summary-row {
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   gap: 1px; background: var(--border);
   border: 1px solid var(--border); border-radius: 3px; overflow: hidden;
   flex-shrink: 0; transition: background 0.2s, border-color 0.2s;
 }
-.stat-cell {
+.summary-cell {
   background: var(--paper); padding: 9px 10px;
   display: flex; flex-direction: column; gap: 2px;
   transition: background 0.2s;
 }
-.sc-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.sc-value { font-family: 'Shippori Mincho', serif; font-size: 22px; font-weight: 600; line-height: 1; }
-.sc-value.red { color: var(--red); }
-
-/* Export warning */
-.export-warn {
+.summary-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.summary-value { font-family: 'Shippori Mincho', serif; font-size: 22px; font-weight: 600; line-height: 1; }
   display: none; align-items: center; gap: 10px;
   padding: 8px 12px; border-radius: 3px;
   background: var(--red-soft); border: 1px solid var(--red);
@@ -463,18 +495,38 @@ body::after {
     </div>
   </div>
 
-  <div class="stats-row">
-    <div class="stat-cell">
-      <span class="sc-label">Total</span>
-      <span class="sc-value" id="hs-total">0</span>
+  <!-- Arc progress -->
+  <div class="arc-block">
+    <svg class="arc-svg" id="arc-svg" viewBox="0 0 320 32" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="arc-stats">
+      <div class="arc-stat">
+        <span class="arc-stat-value val-overdue" id="hs-overdue">0</span>
+        <span class="arc-stat-label lbl-overdue">Overdue</span>
+      </div>
+      <div class="arc-stat">
+        <span class="arc-stat-value val-review" id="hs-review">0</span>
+        <span class="arc-stat-label lbl-review">Review</span>
+      </div>
+      <div class="arc-stat">
+        <span class="arc-stat-value val-new" id="hs-new">0</span>
+        <span class="arc-stat-label lbl-new">New</span>
+      </div>
     </div>
-    <div class="stat-cell">
-      <span class="sc-label">Due now</span>
-      <span class="sc-value red" id="hs-due">0</span>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="summary-row">
+    <div class="summary-cell">
+      <span class="summary-label">Total</span>
+      <span class="summary-value" id="hs-total">0</span>
     </div>
-    <div class="stat-cell">
-      <span class="sc-label">Learned</span>
-      <span class="sc-value" id="hs-learned">0</span>
+    <div class="summary-cell">
+      <span class="summary-label">Learning</span>
+      <span class="summary-value" id="hs-learning">0</span>
+    </div>
+    <div class="summary-cell">
+      <span class="summary-label">Mastered</span>
+      <span class="summary-value" id="hs-mastered">0</span>
     </div>
   </div>
 
@@ -864,6 +916,102 @@ function renderWeakScreen() {
 }
 
 // ══════════════════════════════════════════════
+//  ARC
+// ══════════════════════════════════════════════
+(function() {
+  const W = 320;
+  const CX = W / 2;
+  const CY = 1500;
+  const R_OUTER = 1509;
+  const R_INNER = 1504;
+  const GAP_DEG = 0.7;
+  const TICK_HALF = 7;
+  const HALF = Math.asin((W / 2) / ((R_OUTER + R_INNER) / 2)) * (180 / Math.PI);
+  const C_DEG = 270;
+  const START = C_DEG - HALF;
+  const END   = C_DEG + HALF;
+  const SWEEP = END - START;
+
+  const toRad = d => d * Math.PI / 180;
+  const pt = (r, deg) => {
+    const a = toRad(deg);
+    return { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) };
+  };
+  const arcPath = (rO, rI, a1, a2) => {
+    if (Math.abs(a2 - a1) < 0.005) return '';
+    const large = (a2 - a1) > 180 ? 1 : 0;
+    const p1=pt(rO,a1), p2=pt(rO,a2), p3=pt(rI,a2), p4=pt(rI,a1);
+    return `M${p1.x} ${p1.y} A${rO} ${rO} 0 ${large} 1 ${p2.x} ${p2.y}`
+         + ` L${p3.x} ${p3.y} A${rI} ${rI} 0 ${large} 0 ${p4.x} ${p4.y}Z`;
+  };
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const mkPath = (d, fill, op) => {
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d', d); p.setAttribute('fill', fill);
+    if (op != null) p.setAttribute('opacity', String(op));
+    return p;
+  };
+  const mkLine = (x1,y1,x2,y2,stroke,w) => {
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.setAttribute('stroke',stroke); l.setAttribute('stroke-width',w);
+    l.setAttribute('stroke-linecap','round');
+    return l;
+  };
+
+  window.drawArc = function(nOver, nRev, nNew, donePct) {
+    const svg = document.getElementById('arc-svg');
+    if (!svg) return;
+    svg.innerHTML = '';
+    svg.appendChild(mkPath(arcPath(R_OUTER, R_INNER, START, END), css('--seg-track')));
+
+    const total = nOver + nRev + nNew;
+    if (total === 0) return;
+
+    const degPerCard = SWEEP / total;
+    const gapDeg     = Math.min(GAP_DEG, degPerCard * 0.25);
+    const doneDeg    = donePct * SWEEP;
+    const doneEdge   = START + doneDeg;
+
+    const segs = [
+      { count: nOver, color: css('--seg-overdue') },
+      { count: nRev,  color: css('--seg-review')  },
+      { count: nNew,  color: css('--seg-new')      },
+    ];
+
+    let cursor = START;
+    for (const seg of segs) {
+      if (!seg.count) continue;
+      const span = seg.count * degPerCard;
+      const a1 = cursor + gapDeg / 2;
+      const a2 = cursor + span - gapDeg / 2;
+      cursor += span;
+      if (a2 <= a1) continue;
+
+      const uStart = Math.max(a1, doneEdge);
+      if (uStart < a2) svg.appendChild(mkPath(arcPath(R_OUTER, R_INNER, uStart, a2), seg.color, 0.9));
+
+      const dEnd = Math.min(a2, doneEdge);
+      if (dEnd > a1) svg.appendChild(mkPath(arcPath(R_OUTER, R_INNER, a1, dEnd), css('--seg-done'), 0.9));
+    }
+
+    // Tick mark at progress boundary
+    if (donePct > 0.005 && donePct < 0.995) {
+      const midR = (R_OUTER + R_INNER) / 2;
+      const pos  = pt(midR, doneEdge);
+      const nx   = Math.cos(toRad(doneEdge));
+      const ny   = Math.sin(toRad(doneEdge));
+      svg.appendChild(mkLine(
+        pos.x - nx * TICK_HALF, pos.y - ny * TICK_HALF,
+        pos.x + nx * TICK_HALF, pos.y + ny * TICK_HALF,
+        css('--seg-done'), 1.2
+      ));
+    }
+  };
+})();
+
+// ══════════════════════════════════════════════
 //  HOME
 // ══════════════════════════════════════════════
 function updateHomeUI() {
@@ -871,21 +1019,32 @@ function updateHomeUI() {
   const words = Object.keys(db);
   const caps = getCaps();
 
-  const dueReviews = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now);
-  const newWords   = words.filter(w => !db[w]?.graduated);
-  const learned    = words.filter(w => db[w]?.graduated);
+  const overdue  = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now - 86400000);
+  const dueToday = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now && (db[w].due||0) > now - 86400000);
+  const newWords = words.filter(w => !db[w]?.graduated);
 
-  document.getElementById('hs-total').textContent   = words.length;
-  document.getElementById('hs-due').textContent     = Math.min(dueReviews.length, caps.reviews) + Math.min(newWords.length, caps.newWords);
-  document.getElementById('hs-learned').textContent = learned.length;
+  // Summary row
+  const learning = words.filter(w => !db[w]?.graduated && (db[w].repetitions||0) > 0);
+  const mastered = words.filter(w => db[w]?.graduated && (db[w].interval||0) >= 21);
 
-  const totalDue = dueReviews.length + newWords.length;
+  document.getElementById('hs-total').textContent    = words.length;
+  document.getElementById('hs-learning').textContent = learning.length;
+  document.getElementById('hs-mastered').textContent = mastered.length;
+
+  document.getElementById('hs-overdue').textContent = overdue.length;
+  document.getElementById('hs-review').textContent  = dueToday.length;
+  document.getElementById('hs-new').textContent     = newWords.length;
+
+  const totalDue = overdue.length + dueToday.length + newWords.length;
   const btn = document.getElementById('btn-study');
   btn.disabled    = totalDue === 0;
+  const cappedRev = Math.min(overdue.length + dueToday.length, caps.reviews);
+  const cappedNew = Math.min(newWords.length, caps.newWords);
   btn.textContent = totalDue > 0
-    ? `→ Study ${Math.min(dueReviews.length, caps.reviews)}r + ${Math.min(newWords.length, caps.newWords)}n`
+    ? `→ Study ${cappedRev}r + ${cappedNew}n`
     : '→ No Cards Due';
 
+  drawArc(overdue.length, dueToday.length, newWords.length, 0);
   renderStreak();
   renderWeakHome();
   checkExportWarn();
@@ -1065,35 +1224,59 @@ function beginSession(words) {
 function nextCard() {
   updateMini();
   if (!queue.length) { endSession(false); return; }
-  cur = queue.shift(); flipped = false;
 
-  document.getElementById('card').classList.remove('flipped');
-  document.getElementById('card-kanji').textContent    = cur.word;
-  document.getElementById('card-kanji-b').textContent  = cur.word;
-  document.getElementById('card-furigana').textContent = cur.furigana || cur.word;
-  document.getElementById('card-def').textContent      = cur.definition || '(no definition)';
-  const jlpt = cur.jlpt||'';
-  document.getElementById('card-jlpt-f').textContent   = jlpt;
-  document.getElementById('card-jlpt-b').textContent   = jlpt;
+  const cardEl = document.getElementById('card');
+  const doLoad = () => {
+    cur = queue.shift(); flipped = false;
 
-  // Show NEW badge for ungraduated cards
-  const ctr = document.getElementById('card-ctr');
-  ctr.textContent = `${sReviewed+1} / ${sTotal}`;
-  ctr.style.color = !db[cur.word]?.graduated ? 'var(--green)' : 'var(--muted)';
+    // Reset to front — no transition during content swap
+    cardEl.style.transition = 'none';
+    cardEl.classList.remove('flipped');
 
-  // Reset sentence panel
-  const panel = document.getElementById('sent-panel');
-  panel.classList.remove('open');
-  document.getElementById('sent-jp').innerHTML  = '';
-  document.getElementById('sent-en').textContent = '';
-  document.getElementById('sent-err').style.display = 'none';
-  document.getElementById('sent-loading').style.display = 'none';
-  const rb = document.getElementById('read-btn');
-  rb.classList.remove('loading');
-  rb.textContent = '見る · example';
+    // Force reflow so the removal takes effect before re-enabling transition
+    cardEl.getBoundingClientRect();
+    cardEl.style.transition = '';
 
-  document.getElementById('rating-area').style.display = 'none';
-  updateProg();
+    document.getElementById('card-kanji').textContent    = cur.word;
+    document.getElementById('card-kanji-b').textContent  = cur.word;
+    document.getElementById('card-furigana').textContent = cur.furigana || cur.word;
+    document.getElementById('card-def').textContent      = cur.definition || '(no definition)';
+    const jlpt = cur.jlpt||'';
+    document.getElementById('card-jlpt-f').textContent   = jlpt;
+    document.getElementById('card-jlpt-b').textContent   = jlpt;
+
+    const ctr = document.getElementById('card-ctr');
+    ctr.textContent = `${sReviewed+1} / ${sTotal}`;
+    ctr.style.color = !db[cur.word]?.graduated ? 'var(--green)' : 'var(--muted)';
+
+    // Reset sentence panel
+    const panel = document.getElementById('sent-panel');
+    panel.classList.remove('open');
+    document.getElementById('sent-jp').innerHTML   = '';
+    document.getElementById('sent-en').textContent = '';
+    document.getElementById('sent-err').style.display    = 'none';
+    document.getElementById('sent-loading').style.display = 'none';
+    const rb = document.getElementById('read-btn');
+    rb.classList.remove('loading');
+    rb.textContent = '見る · example';
+
+    document.getElementById('rating-area').style.display = 'none';
+    updateProg();
+  };
+
+  // If currently flipped, wait for the unflip animation to finish before loading new card
+  if (cardEl.classList.contains('flipped')) {
+    // Unflip first, then load after transition completes
+    cardEl.addEventListener('transitionend', function handler() {
+      cardEl.removeEventListener('transitionend', handler);
+      doLoad();
+    });
+    cardEl.classList.remove('flipped');
+    // Hide rating area immediately
+    document.getElementById('rating-area').style.display = 'none';
+  } else {
+    doLoad();
+  }
 }
 
 function flipCard() {
