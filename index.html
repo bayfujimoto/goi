@@ -535,7 +535,7 @@ body::after {
 
   <!-- Arc progress -->
   <div class="arc-block">
-    <svg class="arc-svg" id="arc-svg" viewBox="0 0 320 32" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg class="arc-svg" id="arc-svg" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="arc-stats">
       <div class="arc-stat">
         <span class="arc-stat-value val-overdue" id="hs-overdue">0</span>
@@ -796,7 +796,7 @@ applyTheme();
 const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps' };
 
 const load = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
-const save = (k,v) => localStorage.setItem(k, JSON.stringify(v));
+const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { showToast('Storage full — export your data'); } };
 
 let db       = load(K.db)     || {};
 let wordMeta = load(K.meta)   || {};
@@ -815,7 +815,7 @@ function applyRating(c, q) {
   } else {
     c.correctStreak = 0; // Again or Hard resets streak
   }
-  if (smQ < 3) { c.repetitions = 0; c.interval = 1; c.lapses = (c.lapses||0) + 1; }
+  if (smQ === 0) { c.repetitions = 0; c.interval = 1; c.lapses = (c.lapses||0) + 1; }
   else {
     c.interval = c.repetitions === 0 ? 1 : c.repetitions === 1 ? 4 : Math.round(c.interval * c.easeFactor);
     c.repetitions++;
@@ -983,20 +983,63 @@ function renderWeakScreen() {
 //  ARC
 // ══════════════════════════════════════════════
 (function() {
-  const W = 320;
-  const CX = W / 2;
-  const CY = 1800;
-  const R_OUTER = 1509;
-  const R_INNER = 1504;
-  const GAP_DEG = 0.7;
-  const TICK_HALF = 7;
-  const HALF = Math.asin((W / 2) / ((R_OUTER + R_INNER) / 2)) * (180 / Math.PI);
-  const C_DEG = 270;
+  // ─── Arc config — edit these to reshape the arc ───────────────────────────
+  const ARC = {
+    W:        320,   // SVG canvas width (px). Height is auto-derived.
+    radius:   1200,  // Midline radius of the arc. Larger = flatter curve.
+    thickness:  3,   // Stroke thickness (R_OUTER - R_INNER).
+    angleDeg: 270,   // Angle (°) where the arc midpoint sits. 270 = bottom of circle (curves up).
+    gapDeg:   0.7,   // Gap between segments (degrees).
+    tickHalf:   6,   // Half-length of the progress tick mark (px in SVG space).
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const W       = ARC.W;
+  const CX      = W / 2;
+  const R_OUTER = ARC.radius + ARC.thickness / 2;
+  const R_INNER = ARC.radius - ARC.thickness / 2;
+  const GAP_DEG = ARC.gapDeg;
+  const TICK_HALF = ARC.tickHalf;
+  const C_DEG   = ARC.angleDeg;
+  // How many degrees the arc spans — computed from how wide the canvas is
+  const HALF  = Math.asin((W / 2) / ARC.radius) * (180 / Math.PI);
   const START = C_DEG - HALF;
   const END   = C_DEG + HALF;
   const SWEEP = END - START;
 
-  const toRad = d => d * Math.PI / 180;
+  // Derive the viewBox so it exactly frames the visible arc strip.
+  // The top of the arc (innermost point at START/END) sits at:
+  //   CY + R_INNER * sin(START_rad)  — but CY itself must place the arc correctly.
+  // We set CY so the arc's topmost pixel lands at y=0 in SVG space,
+  // then shift the viewBox down by the margin we want.
+  const MARGIN = 2;  // px above/below the arc strip inside the viewBox
+  const toRad  = d => d * Math.PI / 180;
+  // At angleDeg=270 the arc center is directly below the canvas midpoint.
+  // Top edge of the arc = CY - R_OUTER (the outermost radius pointing up).
+  // We want that to sit at y=0 so we choose CY = R_OUTER.
+  // But for an arbitrary C_DEG the topmost point is at:
+  //   CY + R_OUTER * sin(C_DEG_rad - 90°)  — the point on the arc closest to the top.
+  // Simplest: just keep CY = R_OUTER so the circle's top tangent is at y=0.
+  const CY = R_OUTER;
+  // The visible strip spans from the top of the outer arc to the bottom of the outer arc
+  // at the two endpoints (START and END). Compute those y values.
+  const yTop = Math.min(
+    CY + R_OUTER * Math.sin(toRad(START)),
+    CY + R_OUTER * Math.sin(toRad(END)),
+    CY + R_OUTER * Math.sin(toRad(C_DEG))
+  );
+  const yBot = Math.max(
+    CY + R_OUTER * Math.sin(toRad(START)),
+    CY + R_OUTER * Math.sin(toRad(END)),
+    CY + R_OUTER * Math.sin(toRad(C_DEG))
+  );
+  const vbY = yTop - MARGIN;
+  const vbH = (yBot - yTop) + MARGIN * 2;
+
+  // Apply viewBox to the SVG element immediately
+  const svgEl = document.getElementById('arc-svg');
+  if (svgEl) svgEl.setAttribute('viewBox', `0 ${vbY} ${W} ${vbH}`);
+
   const pt = (r, deg) => {
     const a = toRad(deg);
     return { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) };
@@ -1208,6 +1251,7 @@ function saveApiKey() {
 
 function confirmReset() {
   if (!confirm('Delete ALL words and SRS progress? Cannot be undone.')) return;
+  if (!confirm('Are you sure? This cannot be reversed.')) return;
   [K.db, K.meta, K.streak].forEach(k => localStorage.removeItem(k));
   db = {}; wordMeta = {};
   updateHomeUI(); goHome(); showToast('All data cleared');
@@ -1272,11 +1316,8 @@ function studyAll() {
   const all = Object.keys(db);
   if (!all.length) { showToast('Import a word bank first'); return; }
   sessionCapped = false;
-  // uncapped: all due reviews + all new, shuffled
-  const now = Date.now();
-  const due = all.filter(w => (db[w].due||0) <= now);
-  shuffle(due);
-  beginSession(due.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) })));
+  shuffle(all);
+  beginSession(all.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) })));
 }
 
 function beginSession(words) {
@@ -1527,22 +1568,17 @@ function guessKanjiReading(word, furigana, targetKanji) {
   return furigana;
 }
 
-// Search own deck for words containing the same kanji with overlapping furigana
+// Search own deck for words containing the same kanji character(s)
 function findDeckMatches(targetWord, targetKanji, targetFurigana, limit) {
   const results = [];
   for (const w of Object.keys(wordMeta)) {
     if (w === targetWord) continue;
     const m = wordMeta[w];
     if (!m?.furigana) continue;
-    // Must contain at least one of the same kanji
+    // Match on shared kanji only — on-yomi words like 日(にち) and 毎日(まいにち)
+    // share the kanji 日 but their furigana strings share no useful substring
     const sharedKanji = targetKanji.filter(k => w.includes(k));
     if (!sharedKanji.length) continue;
-    // Furigana overlap check: any mora in common (very loose but avoids
-    // totally unrelated readings like 日:にち vs 日:ひ)
-    const targetMoras = targetFurigana.replace(/[ぁ-ん]/g, c => c).split('');
-    const candidateMoras = m.furigana.split('');
-    const overlap = targetMoras.some(m2 => candidateMoras.includes(m2));
-    if (!overlap) continue;
     results.push({ word: w, reading: m.furigana, source: 'deck' });
     if (results.length >= limit) break;
   }
@@ -1575,19 +1611,19 @@ async function fetchRelated() {
     // 2. If deck doesn't fill quota, ask Claude for N5 fallbacks
     if (needed > 0 && targetKanji.length > 0) {
       const kanjiList = targetKanji.join('、');
-      const prompt = `List ${needed} common N5-level Japanese words (other than 「${cur.word}」) that contain one of these kanji: ${kanjiList}
-and share a similar reading to 「${cur.furigana || cur.word}」.
+      const prompt = `List ${needed} common Japanese words (other than 「${cur.word}」) that contain one of these kanji: ${kanjiList}
+and use the same on-yomi (Chinese-derived reading) for that kanji as it appears in 「${cur.word}」(${cur.furigana || cur.word}).
 
 Rules:
-- Only include words genuinely used at N5 level
-- Each word must contain at least one of: ${kanjiList}
+- The shared kanji must be read with its on-yomi in both words
+- Prefer common, everyday words
 - Do not include 「${cur.word}」 itself
 - Respond ONLY with lines in this exact format, nothing else:
 WORD|READING
 
 Example:
-先生|せんせい
-学校|がっこう`;
+日本|にほん
+毎日|まいにち`;
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
