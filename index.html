@@ -1012,6 +1012,7 @@ function renderWeakScreen() {
 
 function ignoreFromWeak(word) {
   if (!db[word]) return;
+  if (!confirm(`Ignore "${word}"? It won't appear in future study sessions.`)) return;
   db[word].ignored = true;
   save(K.db, db);
   showToast(`${word} ignored`);
