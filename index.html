@@ -345,6 +345,44 @@ body::after {
 .back-furigana { font-family: 'Shippori Mincho', serif; font-size: clamp(26px, 8vw, 38px); color: var(--ink); text-align: center; }
 .back-divider  { width: 22px; height: 1px; background: var(--border); margin: 10px 0; }
 .back-def { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.7; max-width: 250px; }
+.back-source { font-size: 9px; color: var(--border); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 6px; text-align: center; }
+
+/* Card back footer — same-reading button */
+.back-foot {
+  position: absolute; bottom: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.related-btn {
+  padding: 5px 11px; border-radius: 2px;
+  border: 1px solid var(--border); background: var(--card-back);
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--muted); cursor: pointer; letter-spacing: 0.06em;
+  transition: background 0.12s, border-color 0.2s;
+}
+.related-btn:active { background: var(--paper-mid); }
+.related-btn.loading { opacity: 0.45; pointer-events: none; }
+
+/* Related reading panel */
+.related-panel {
+  display: none; flex-direction: column; gap: 8px; align-items: center;
+  width: 100%; margin-top: 10px;
+  border-top: 1px solid var(--border); padding-top: 10px;
+  transition: border-color 0.2s;
+}
+.related-panel.open { display: flex; }
+.related-loading { font-size: 11px; color: var(--muted); font-style: italic; }
+.related-list { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.related-item {
+  display: flex; align-items: baseline; gap: 8px;
+  justify-content: center;
+}
+.related-kanji {
+  font-family: 'Shippori Mincho', serif;
+  font-size: 17px; color: var(--ink); line-height: 1;
+}
+.related-reading { font-size: 10px; color: var(--muted); }
+.related-source { font-size: 9px; color: var(--border); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+.related-err { font-size: 10px; color: var(--red); text-align: center; }
 
 /* Rating */
 .rating-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; }
@@ -608,6 +646,20 @@ body::after {
         <div class="back-furigana"   id="card-furigana">—</div>
         <div class="back-divider"></div>
         <div class="back-def"        id="card-def">—</div>
+        <div class="back-source"     id="card-source"></div>
+
+        <!-- Related reading panel -->
+        <div class="related-panel" id="related-panel">
+          <div class="related-loading" id="related-loading" style="display:none">Finding words…</div>
+          <div class="related-list"    id="related-list"></div>
+          <div class="related-source"  id="related-source"></div>
+          <div class="related-err"     id="related-err" style="display:none"></div>
+        </div>
+
+        <div class="back-foot">
+          <button class="related-btn" id="related-btn"
+            onclick="event.stopPropagation();fetchRelated()">同じ読み · same reading</button>
+        </div>
       </div>
 
     </div>
@@ -783,14 +835,26 @@ function parseWordBank(text) {
     if (/JLPT|Word|Furigana|Definition/i.test(t) && t.includes('|')) continue;
     const parts = t.split('|').map(p=>p.trim()).filter((_,i,a)=>i>0&&i<a.length-1);
     if (parts.length < 2) continue;
-    let jlpt='', word='', furigana='', definition='';
-    if (parts.length>=4 && /^N[1-5]$|^$/.test(parts[0]))  { [jlpt,word,furigana,definition] = parts; }
-    else if (parts[0].match(/^\d{4}-\d{2}-\d{2}$/))       { [,word,furigana,definition] = parts; }
-    else if (parts.length>=3)                               { [word,furigana,definition] = parts; }
-    else                                                    { [word,furigana] = parts; }
+    let jlpt='', word='', furigana='', definition='', source='';
+
+    // 5-column: JLPT | Word | Furigana | Definition | Source
+    if (parts.length >= 5 && /^N[1-5]$|^$/.test(parts[0])) {
+      [jlpt, word, furigana, definition, source] = parts;
+    }
+    // 4-column: JLPT | Word | Furigana | Definition
+    else if (parts.length >= 4 && /^N[1-5]$|^$/.test(parts[0])) {
+      [jlpt, word, furigana, definition] = parts;
+    }
+    // date-prefixed row (old format)
+    else if (parts[0].match(/^\d{4}-\d{2}-\d{2}$/)) {
+      [, word, furigana, definition] = parts;
+    }
+    else if (parts.length >= 3) { [word, furigana, definition] = parts; }
+    else                         { [word, furigana] = parts; }
+
     word = word.trim();
     if (!word || seen[word]) continue;
-    seen[word] = { word, furigana:furigana.trim(), definition:definition.trim(), jlpt:jlpt.trim() };
+    seen[word] = { word, furigana:furigana.trim(), definition:definition.trim(), jlpt:jlpt.trim(), source:source.trim() };
   }
   return Object.values(seen);
 }
@@ -921,13 +985,13 @@ function renderWeakScreen() {
 (function() {
   const W = 320;
   const CX = W / 2;
-  const CY = 1500;
-  const R_OUTER = 1509;
+  const CY = 1800;
+  const R_OUTER = 1507;
   const R_INNER = 1504;
   const GAP_DEG = 0.7;
-  const TICK_HALF = 7;
+  const TICK_HALF = 3;
   const HALF = Math.asin((W / 2) / ((R_OUTER + R_INNER) / 2)) * (180 / Math.PI);
-  const C_DEG = 270;
+  const C_DEG = 250;
   const START = C_DEG - HALF;
   const END   = C_DEG + HALF;
   const SWEEP = END - START;
@@ -1069,7 +1133,7 @@ function handleMd(e) {
         db[w.word].importedAt = importTime - added; // slight offset preserves order within batch
         added++;
       }
-      wordMeta[w.word] = { furigana:w.furigana, definition:w.definition, jlpt:w.jlpt };
+      wordMeta[w.word] = { furigana:w.furigana, definition:w.definition, jlpt:w.jlpt, source:w.source||'' };
     }
     save(K.db, db); save(K.meta, wordMeta);
     updateHomeUI();
@@ -1241,6 +1305,8 @@ function nextCard() {
     document.getElementById('card-kanji-b').textContent  = cur.word;
     document.getElementById('card-furigana').textContent = cur.furigana || cur.word;
     document.getElementById('card-def').textContent      = cur.definition || '(no definition)';
+    const src = (wordMeta[cur.word]||{}).source || '';
+    document.getElementById('card-source').textContent   = src ? `— ${src} —` : '';
     const jlpt = cur.jlpt||'';
     document.getElementById('card-jlpt-f').textContent   = jlpt;
     document.getElementById('card-jlpt-b').textContent   = jlpt;
@@ -1259,6 +1325,17 @@ function nextCard() {
     const rb = document.getElementById('read-btn');
     rb.classList.remove('loading');
     rb.textContent = '見る · example';
+
+    // Reset related panel
+    const rp = document.getElementById('related-panel');
+    rp.classList.remove('open');
+    document.getElementById('related-list').innerHTML    = '';
+    document.getElementById('related-source').textContent = '';
+    document.getElementById('related-err').style.display  = 'none';
+    document.getElementById('related-loading').style.display = 'none';
+    const rrb = document.getElementById('related-btn');
+    rrb.classList.remove('loading');
+    rrb.textContent = '同じ読み · same reading';
 
     document.getElementById('rating-area').style.display = 'none';
     updateProg();
@@ -1419,8 +1496,166 @@ EN: <English>`;
 }
 
 // ══════════════════════════════════════════════
-//  UTILS
+//  CLAUDE API — SAME READING WORDS
 // ══════════════════════════════════════════════
+
+// Returns true if character is a CJK kanji
+function isKanji(ch) {
+  const c = ch.codePointAt(0);
+  return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF);
+}
+
+// Extract kanji characters from a word
+function extractKanji(word) {
+  return [...word].filter(isKanji);
+}
+
+// Best-effort: given a word and its furigana, extract the reading for a
+// specific kanji at a known index within the word's kanji sequence.
+// Strategy: align kanji chars to furigana by assuming one mora per kanji
+// on average. For single-kanji words it's exact. For multi-kanji words
+// it's approximate but useful.
+function guessKanjiReading(word, furigana, targetKanji) {
+  const kanjiChars = extractKanji(word);
+  if (!kanjiChars.length || !furigana) return furigana || '';
+
+  // Single kanji word — reading is the full furigana
+  if (kanjiChars.length === 1) return furigana;
+
+  // For multi-kanji, return full furigana as a safe fallback
+  // (searching for shared kanji character is the reliable part)
+  return furigana;
+}
+
+// Search own deck for words containing the same kanji with overlapping furigana
+function findDeckMatches(targetWord, targetKanji, targetFurigana, limit) {
+  const results = [];
+  for (const w of Object.keys(wordMeta)) {
+    if (w === targetWord) continue;
+    const m = wordMeta[w];
+    if (!m?.furigana) continue;
+    // Must contain at least one of the same kanji
+    const sharedKanji = targetKanji.filter(k => w.includes(k));
+    if (!sharedKanji.length) continue;
+    // Furigana overlap check: any mora in common (very loose but avoids
+    // totally unrelated readings like 日:にち vs 日:ひ)
+    const targetMoras = targetFurigana.replace(/[ぁ-ん]/g, c => c).split('');
+    const candidateMoras = m.furigana.split('');
+    const overlap = targetMoras.some(m2 => candidateMoras.includes(m2));
+    if (!overlap) continue;
+    results.push({ word: w, reading: m.furigana, source: 'deck' });
+    if (results.length >= limit) break;
+  }
+  return results;
+}
+
+async function fetchRelated() {
+  if (!cur) return;
+  const apiKey = localStorage.getItem(K.api);
+  if (!apiKey) { showToast('Add API key in Settings ⚙'); return; }
+
+  const panel = document.getElementById('related-panel');
+  panel.classList.add('open');
+  document.getElementById('related-loading').style.display = 'block';
+  document.getElementById('related-list').innerHTML   = '';
+  document.getElementById('related-source').textContent = '';
+  document.getElementById('related-err').style.display  = 'none';
+  const btn = document.getElementById('related-btn');
+  btn.classList.add('loading');
+
+  const MAX = 3;
+  const targetKanji = extractKanji(cur.word);
+
+  try {
+    // 1. Search own deck first
+    const deckMatches = findDeckMatches(cur.word, targetKanji, cur.furigana || '', MAX);
+    const needed = MAX - deckMatches.length;
+    let apiMatches = [];
+
+    // 2. If deck doesn't fill quota, ask Claude for N5 fallbacks
+    if (needed > 0 && targetKanji.length > 0) {
+      const kanjiList = targetKanji.join('、');
+      const prompt = `List ${needed} common N5-level Japanese words (other than 「${cur.word}」) that contain one of these kanji: ${kanjiList}
+and share a similar reading to 「${cur.furigana || cur.word}」.
+
+Rules:
+- Only include words genuinely used at N5 level
+- Each word must contain at least one of: ${kanjiList}
+- Do not include 「${cur.word}」 itself
+- Respond ONLY with lines in this exact format, nothing else:
+WORD|READING
+
+Example:
+先生|せんせい
+学校|がっこう`;
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 120,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      if (!res.ok) {
+        const e = await res.json().catch(()=>({}));
+        throw new Error(e.error?.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const text = data.content?.[0]?.text?.trim() || '';
+      apiMatches = text.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.includes('|'))
+        .slice(0, needed)
+        .map(l => {
+          const [word, reading] = l.split('|').map(s => s.trim());
+          return { word, reading, source: 'n5' };
+        })
+        .filter(x => x.word && x.reading);
+    }
+
+    const all = [...deckMatches, ...apiMatches].slice(0, MAX);
+
+    if (!all.length) {
+      document.getElementById('related-err').style.display = 'block';
+      document.getElementById('related-err').textContent   = 'No related words found';
+      return;
+    }
+
+    // Render results
+    const listEl = document.getElementById('related-list');
+    listEl.innerHTML = all.map(r => `
+      <div class="related-item">
+        <span class="related-kanji">${r.word}</span>
+        <span class="related-reading">${r.reading}</span>
+      </div>`).join('');
+
+    // Source attribution
+    const hasDeck = all.some(r => r.source === 'deck');
+    const hasN5   = all.some(r => r.source === 'n5');
+    const srcEl   = document.getElementById('related-source');
+    if (hasDeck && hasN5)  srcEl.textContent = 'from your deck + N5';
+    else if (hasDeck)      srcEl.textContent = 'from your deck';
+    else                   srcEl.textContent = 'N5 examples';
+
+  } catch(err) {
+    const el = document.getElementById('related-err');
+    el.style.display  = 'block';
+    el.textContent = err.message.includes('401') ? 'Invalid API key — check Settings' : 'Error: ' + err.message;
+  } finally {
+    document.getElementById('related-loading').style.display = 'none';
+    btn.classList.remove('loading');
+    btn.textContent = '↺ same reading';
+  }
+}
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + name).classList.add('active');
