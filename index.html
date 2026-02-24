@@ -385,6 +385,7 @@ body::after {
 .related-err { font-size: 10px; color: var(--red); text-align: center; }
 
 /* Rating */
+.ignore-btn { align-self: center; color: var(--muted); font-size: 11px; opacity: 0.7; margin-top: 2px; }
 .rating-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; }
 .rating-hint { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); text-align: center; }
 .rating-btns { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
@@ -673,6 +674,7 @@ body::after {
       <button class="r-btn r-g" onclick="rate(2)">Good<span class="sub">got it</span></button>
       <button class="r-btn r-e" onclick="rate(3)">Easy<span class="sub">instant</span></button>
     </div>
+    <button class="btn btn-ghost btn-sm ignore-btn" onclick="ignoreCard()">Ignore this word</button>
   </div>
 </div>
 
@@ -683,6 +685,15 @@ body::after {
     <span class="screen-title">Weak Words</span>
   </div>
   <div class="weak-scroll" id="weak-scroll"></div>
+</div>
+
+<!-- ══ IGNORED WORDS ══ -->
+<div id="screen-ignored" class="screen">
+  <div class="screen-header">
+    <button class="btn btn-ghost btn-sm" onclick="goSettings()">← Settings</button>
+    <span class="screen-title">Ignored Words</span>
+  </div>
+  <div class="weak-scroll" id="ignored-scroll"></div>
 </div>
 
 <!-- ══ DONE ══ -->
@@ -739,8 +750,21 @@ body::after {
         <input class="caps-field" id="cap-rev" type="number" min="1" max="200" value="30">
       </div>
     </div>
+    <div class="caps-field-wrap" style="align-self:flex-start">
+      <label class="caps-label">New word order</label>
+      <select class="caps-field" id="cap-order">
+        <option value="recent">Recent first</option>
+        <option value="jlpt">JLPT level (N5 → N1)</option>
+      </select>
+    </div>
     <button class="btn btn-ghost btn-sm" style="align-self:flex-start" onclick="saveCaps()">Save caps</button>
     <div class="api-note">Applies to "Study Due Cards". "Study All" ignores caps.</div>
+  </div>
+
+  <div class="sg">
+    <div class="sg-lbl">Ignored Words</div>
+    <div class="api-note" id="ignored-count">No ignored words</div>
+    <button class="btn btn-ghost btn-sm" style="align-self:flex-start" onclick="goIgnored()">Manage ignored words</button>
   </div>
 
   <div class="sg">
@@ -1126,13 +1150,13 @@ function updateHomeUI() {
   const words = Object.keys(db);
   const caps = getCaps();
 
-  const overdue  = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now - 86400000);
-  const dueToday = words.filter(w => db[w]?.graduated && (db[w].due||0) <= now && (db[w].due||0) > now - 86400000);
-  const newWords = words.filter(w => !db[w]?.graduated);
+  const overdue  = words.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now - 86400000);
+  const dueToday = words.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && (db[w].due||0) > now - 86400000);
+  const newWords = words.filter(w => !db[w]?.graduated && !db[w]?.ignored);
 
   // Summary row
-  const learning = words.filter(w => !db[w]?.graduated && (db[w].repetitions||0) > 0);
-  const mastered = words.filter(w => db[w]?.graduated && (db[w].interval||0) >= 21);
+  const learning = words.filter(w => !db[w]?.graduated && !db[w]?.ignored && (db[w].repetitions||0) > 0);
+  const mastered = words.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].interval||0) >= 21);
 
   document.getElementById('hs-total').textContent    = words.length;
   document.getElementById('hs-learning').textContent = learning.length;
@@ -1229,13 +1253,18 @@ function goSettings() {
   const caps = getCaps();
   document.getElementById('cap-new').value = caps.newWords;
   document.getElementById('cap-rev').value = caps.reviews;
+  document.getElementById('cap-order').value = caps.newOrder || 'recent';
+  const ignoredCount = Object.values(db).filter(c => c.ignored).length;
+  document.getElementById('ignored-count').textContent =
+    ignoredCount ? `${ignoredCount} word${ignoredCount !== 1 ? 's' : ''} ignored` : 'No ignored words';
   showScreen('settings');
 }
 
 function saveCaps() {
   const n = parseInt(document.getElementById('cap-new').value) || 15;
   const r = parseInt(document.getElementById('cap-rev').value) || 30;
-  save(K.caps, { newWords: Math.max(1, Math.min(50, n)), reviews: Math.max(1, Math.min(200, r)) });
+  const o = document.getElementById('cap-order').value;
+  save(K.caps, { newWords: Math.max(1, Math.min(50, n)), reviews: Math.max(1, Math.min(200, r)), newOrder: o });
   showToast('Session caps saved');
 }
 
@@ -1261,7 +1290,7 @@ function confirmReset() {
 //  SESSION CAPS
 // ══════════════════════════════════════════════
 function getCaps() {
-  return load(K.caps) || { newWords: 15, reviews: 30 };
+  return load(K.caps) || { newWords: 15, reviews: 30, newOrder: 'recent' };
 }
 
 // ══════════════════════════════════════════════
@@ -1279,17 +1308,21 @@ function isNew(w) {
 function buildQueue(caps) {
   const now = Date.now();
   const allWords = Object.keys(db);
+  const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[wordMeta[w]?.jlpt] ?? 6);
 
   // Reviews: due cards that have graduated, sorted most overdue first
   const reviews = allWords
-    .filter(w => db[w]?.graduated && (db[w].due||0) <= now)
+    .filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now)
     .sort((a,b) => (db[a].due||0) - (db[b].due||0))
     .slice(0, caps.reviews);
 
-  // New words: not yet graduated, sorted most recently imported first
+  // New words: not yet graduated
   const newWords = allWords
-    .filter(w => !db[w]?.graduated)
-    .sort((a,b) => (db[b].importedAt||0) - (db[a].importedAt||0))
+    .filter(w => !db[w]?.graduated && !db[w]?.ignored)
+    .sort(caps.newOrder === 'jlpt'
+      ? (a,b) => jlptRank(a) - jlptRank(b) || (db[a].importedAt||0) - (db[b].importedAt||0)
+      : (a,b) => (db[b].importedAt||0) - (db[a].importedAt||0)
+    )
     .slice(0, caps.newWords);
 
   // Interleave: roughly one new word per 2 reviews
@@ -1313,7 +1346,7 @@ function startStudy() {
 }
 
 function studyAll() {
-  const all = Object.keys(db);
+  const all = Object.keys(db).filter(w => !db[w]?.ignored);
   if (!all.length) { showToast('Import a word bank first'); return; }
   sessionCapped = false;
   shuffle(all);
@@ -1404,6 +1437,14 @@ function flipCard() {
   const ra = document.getElementById('rating-area');
   ra.style.display = flipped ? 'flex' : 'none';
   if (flipped) ra.style.flexDirection = 'column';
+}
+
+function ignoreCard() {
+  if (!cur) return;
+  db[cur.word].ignored = true;
+  save(K.db, db);
+  showToast('Word ignored — won\'t appear in future sessions');
+  nextCard();
 }
 
 function rate(q) {
@@ -1713,6 +1754,52 @@ function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
   clearTimeout(_tt); _tt = setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// ══════════════════════════════════════════════
+//  IGNORED WORDS
+// ══════════════════════════════════════════════
+function goIgnored() {
+  renderIgnoredScreen();
+  showScreen('ignored');
+}
+
+function renderIgnoredScreen() {
+  const scroll = document.getElementById('ignored-scroll');
+  scroll.innerHTML = '';
+  const ignored = Object.keys(db).filter(w => db[w]?.ignored);
+  if (!ignored.length) {
+    const empty = document.createElement('div');
+    empty.className = 'api-note';
+    empty.style.padding = '16px 0';
+    empty.textContent = 'No ignored words.';
+    scroll.appendChild(empty);
+    return;
+  }
+  ignored.sort().forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'weak-row';
+    const meta = wordMeta[w] || {};
+    row.innerHTML = `
+      <span class="wr-kanji">${w}</span>
+      <span style="flex:1;font-size:12px;color:var(--muted)">${meta.furigana || ''}${meta.jlpt ? ' · ' + meta.jlpt : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="restoreIgnored('${w.replace(/'/g,"\\'")}')">Restore</button>`;
+    scroll.appendChild(row);
+  });
+}
+
+function restoreIgnored(word) {
+  if (!db[word]) return;
+  delete db[word].ignored;
+  save(K.db, db);
+  renderIgnoredScreen();
+  // refresh ignored count in settings if user navigates back
+  const countEl = document.getElementById('ignored-count');
+  if (countEl) {
+    const n = Object.values(db).filter(c => c.ignored).length;
+    countEl.textContent = n ? `${n} word${n !== 1 ? 's' : ''} ignored` : 'No ignored words';
+  }
+  showToast(`${word} restored`);
 }
 
 // ── INIT ──
