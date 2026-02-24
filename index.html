@@ -175,17 +175,14 @@ body::after {
 .week-dot.today   { border-color: var(--muted); }
 .week-day-lbl { font-size: 8px; color: var(--muted); letter-spacing: 0.02em; line-height: 1; }
 
-/* Arc */
-.arc-block {
-  display: flex; flex-direction: column; gap: 12px;
-  flex-shrink: 0;
-}
-.arc-svg { width: 100%; overflow: visible; display: block; }
-.arc-stats {
-  display: flex; justify-content: space-between; padding: 0 2px;
-}
-.arc-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
-.arc-stat-value { font-family: 'Shippori Mincho', serif; font-size: 22px; font-weight: 600; line-height: 1; }
+/* Ring */
+.arc-block { flex-shrink: 0; }
+.ring-layout { display: flex; flex-direction: row; align-items: center; gap: 20px; }
+.ring-wrap { flex-shrink: 0; width: 150px; height: 150px; }
+.arc-svg { width: 100%; height: 100%; display: block; }
+.arc-stats { display: flex; flex-direction: column; justify-content: center; gap: 14px; flex: 1; }
+.arc-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.arc-stat-value { font-family: 'Shippori Mincho', serif; font-size: 26px; font-weight: 600; line-height: 1; }
 .arc-stat-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
 .val-overdue { color: var(--num-overdue); }
 .val-review  { color: var(--num-review);  }
@@ -534,21 +531,25 @@ body::after {
     </div>
   </div>
 
-  <!-- Arc progress -->
+  <!-- Ring progress -->
   <div class="arc-block">
-    <svg class="arc-svg" id="arc-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-    <div class="arc-stats">
-      <div class="arc-stat">
-        <span class="arc-stat-value val-overdue" id="hs-overdue">0</span>
-        <span class="arc-stat-label lbl-overdue">Overdue</span>
+    <div class="ring-layout">
+      <div class="ring-wrap">
+        <svg class="arc-svg" id="arc-svg" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
-      <div class="arc-stat">
-        <span class="arc-stat-value val-review" id="hs-review">0</span>
-        <span class="arc-stat-label lbl-review">Review</span>
-      </div>
-      <div class="arc-stat">
-        <span class="arc-stat-value val-new" id="hs-new">0</span>
-        <span class="arc-stat-label lbl-new">New</span>
+      <div class="arc-stats">
+        <div class="arc-stat">
+          <span class="arc-stat-value val-overdue" id="hs-overdue">0</span>
+          <span class="arc-stat-label lbl-overdue">Overdue</span>
+        </div>
+        <div class="arc-stat">
+          <span class="arc-stat-value val-review" id="hs-review">0</span>
+          <span class="arc-stat-label lbl-review">Review</span>
+        </div>
+        <div class="arc-stat">
+          <span class="arc-stat-value val-new" id="hs-new">0</span>
+          <span class="arc-stat-label lbl-new">New</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1009,60 +1010,32 @@ function renderWeakScreen() {
 (function() {
   // ─── Arc config — edit these to reshape the arc ───────────────────────────
   const ARC = {
-    W:        270,   // SVG canvas width (px). Height is auto-derived.
-    radius:   300,  // Midline radius of the arc. Larger = flatter curve.
-    thickness:  3,   // Stroke thickness (R_OUTER - R_INNER).
-    angleDeg: 270,   // Angle (°) where the arc midpoint sits. 270 = bottom of circle (curves up).
-    gapDeg:   0.7,   // Gap between segments (degrees).
-    tickHalf:   6,   // Half-length of the progress tick mark (px in SVG space).
+    SIZE:      160,   // SVG canvas width and height (square).
+    radius:     62,   // Midline radius of the ring.
+    thickness:  10,   // Ring stroke width (R_OUTER - R_INNER).
+    sweepDeg:  300,   // Total sweep of the ring. Gap = 60° centered at bottom.
+    gapDeg:    0.8,   // Gap between segments (degrees).
+    tickHalf:    8,   // Half-length of the progress tick mark (px in SVG space).
   };
   // ──────────────────────────────────────────────────────────────────────────
 
-  const W       = ARC.W;
-  const CX      = W / 2;
-  const R_OUTER = ARC.radius + ARC.thickness / 2;
-  const R_INNER = ARC.radius - ARC.thickness / 2;
-  const GAP_DEG = ARC.gapDeg;
+  const SIZE      = ARC.SIZE;
+  const CX        = SIZE / 2;                              // 80
+  const CY        = SIZE / 2;                              // 80
+  const R_OUTER   = ARC.radius + ARC.thickness / 2;       // 69
+  const R_INNER   = ARC.radius - ARC.thickness / 2;       // 55
+  const GAP_DEG   = ARC.gapDeg;
   const TICK_HALF = ARC.tickHalf;
-  const C_DEG   = ARC.angleDeg;
-  // How many degrees the arc spans — computed from how wide the canvas is
-  const HALF  = Math.asin((W / 2) / ARC.radius) * (180 / Math.PI);
-  const START = C_DEG - HALF;
-  const END   = C_DEG + HALF;
-  const SWEEP = END - START;
+  const SWEEP     = ARC.sweepDeg;
+  // Gap centered at 270° (bottom). Ring runs 120° → 420°.
+  const START     = 270 - SWEEP / 2;   // 120
+  const END       = 270 + SWEEP / 2;   // 420
 
-  // Derive the viewBox so it exactly frames the visible arc strip.
-  // The top of the arc (innermost point at START/END) sits at:
-  //   CY + R_INNER * sin(START_rad)  — but CY itself must place the arc correctly.
-  // We set CY so the arc's topmost pixel lands at y=0 in SVG space,
-  // then shift the viewBox down by the margin we want.
-  const MARGIN = 2;  // px above/below the arc strip inside the viewBox
-  const toRad  = d => d * Math.PI / 180;
-  // At angleDeg=270 the arc center is directly below the canvas midpoint.
-  // Top edge of the arc = CY - R_OUTER (the outermost radius pointing up).
-  // We want that to sit at y=0 so we choose CY = R_OUTER.
-  // But for an arbitrary C_DEG the topmost point is at:
-  //   CY + R_OUTER * sin(C_DEG_rad - 90°)  — the point on the arc closest to the top.
-  // Simplest: just keep CY = R_OUTER so the circle's top tangent is at y=0.
-  const CY = R_OUTER;
-  // The visible strip spans from the top of the outer arc to the bottom of the outer arc
-  // at the two endpoints (START and END). Compute those y values.
-  const yTop = Math.min(
-    CY + R_OUTER * Math.sin(toRad(START)),
-    CY + R_OUTER * Math.sin(toRad(END)),
-    CY + R_OUTER * Math.sin(toRad(C_DEG))
-  );
-  const yBot = Math.max(
-    CY + R_OUTER * Math.sin(toRad(START)),
-    CY + R_OUTER * Math.sin(toRad(END)),
-    CY + R_OUTER * Math.sin(toRad(C_DEG))
-  );
-  const vbY = yTop - MARGIN;
-  const vbH = (yBot - yTop) + MARGIN * 2;
+  const toRad = d => d * Math.PI / 180;
 
-  // Apply viewBox to the SVG element immediately
+  // Square viewBox — ring fits exactly inside SIZE × SIZE
   const svgEl = document.getElementById('arc-svg');
-  if (svgEl) svgEl.setAttribute('viewBox', `0 ${vbY} ${W} ${vbH}`);
+  if (svgEl) svgEl.setAttribute('viewBox', `0 0 ${SIZE} ${SIZE}`);
 
   const pt = (r, deg) => {
     const a = toRad(deg);
@@ -1098,6 +1071,20 @@ function renderWeakScreen() {
     svg.appendChild(mkPath(arcPath(R_OUTER, R_INNER, START, END), css('--seg-track')));
 
     const total = nOver + nRev + nNew;
+
+    // Center number — always rendered
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', String(CX));
+    t.setAttribute('y', String(CY));
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('dominant-baseline', 'central');
+    t.setAttribute('font-family', "'Shippori Mincho', serif");
+    t.setAttribute('font-size', '36');
+    t.setAttribute('font-weight', '600');
+    t.setAttribute('fill', css('--ink'));
+    t.textContent = String(total);
+    svg.appendChild(t);
+
     if (total === 0) return;
 
     const degPerCard = SWEEP / total;
