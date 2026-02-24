@@ -122,7 +122,7 @@ body::after {
 /* ══════════════════════════════════════════
    HOME — one screen, no scroll
 ══════════════════════════════════════════ */
-#screen-home { gap: 10px; }
+#screen-home { gap: 15px; }
 
 .home-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -986,7 +986,7 @@ function renderWeakScreen() {
   // ─── Arc config — edit these to reshape the arc ───────────────────────────
   const ARC = {
     W:        320,   // SVG canvas width (px). Height is auto-derived.
-    radius:   1200,  // Midline radius of the arc. Larger = flatter curve.
+    radius:   300,  // Midline radius of the arc. Larger = flatter curve.
     thickness:  3,   // Stroke thickness (R_OUTER - R_INNER).
     angleDeg: 270,   // Angle (°) where the arc midpoint sits. 270 = bottom of circle (curves up).
     gapDeg:   0.7,   // Gap between segments (degrees).
