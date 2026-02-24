@@ -147,6 +147,24 @@ body::after {
 .icon-btn:active { background: var(--paper-dark); }
 .icon-btn svg { display: block; }
 
+/* Forecast bar chart */
+.forecast-chart {
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 48px; padding: 0 2px;
+}
+.fc-bar-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 3px;
+  height: 100%; justify-content: flex-end;
+}
+.fc-bar {
+  width: 100%; background: var(--gold);
+  border-radius: 2px 2px 0 0; min-height: 2px;
+  opacity: 0.75; transition: height 0.2s;
+}
+.fc-label { font-size: 8px; color: var(--muted); letter-spacing: 0.03em; white-space: nowrap; }
+.forecast-empty { font-size: 11px; color: var(--muted); padding: 8px 0; }
+
 /* Streak block — sits above weak words */
 .streak-block {
   display: flex; align-items: center; justify-content: space-between;
@@ -587,6 +605,14 @@ body::after {
     <div class="week-dots" id="week-dots"></div>
   </div>
 
+  <!-- Upcoming review schedule -->
+  <div id="forecast-block">
+    <div class="section-head">
+      <span class="section-lbl">Upcoming</span>
+    </div>
+    <div class="forecast-chart" id="forecast-chart"></div>
+  </div>
+
   <div class="section-head">
     <span class="section-lbl">Weak words</span>
     <button class="btn btn-xs btn-ghost" onclick="showScreen('weak')">See all →</button>
@@ -766,6 +792,22 @@ body::after {
   </div>
 
   <div class="sg">
+    <div class="sg-lbl">Home Screen</div>
+    <div class="caps-field-wrap" style="align-self:flex-start">
+      <label class="caps-label">Upcoming schedule</label>
+      <select class="caps-field" id="forecast-days" onchange="saveForecast()">
+        <option value="7">Next 7 days</option>
+        <option value="14">Next 14 days</option>
+        <option value="30">Next 30 days</option>
+      </select>
+    </div>
+    <label class="caps-field-wrap" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;align-self:flex-start">
+      <input type="checkbox" id="forecast-enabled" onchange="saveForecast()">
+      <span class="caps-label" style="text-transform:none;font-size:11px">Show on home screen</span>
+    </label>
+  </div>
+
+  <div class="sg">
     <div class="sg-lbl">Ignored Words</div>
     <div class="api-note" id="ignored-count">No ignored words</div>
     <button class="btn btn-ghost btn-sm" style="align-self:flex-start" onclick="goIgnored()">Manage ignored words</button>
@@ -821,7 +863,7 @@ applyTheme();
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
-const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps' };
+const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps', forecast:'goi_forecast' };
 
 const load = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
 const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { showToast('Storage full — export your data'); } };
@@ -953,6 +995,54 @@ function checkExportWarn() {
   } else {
     el.style.display = 'none';
   }
+}
+
+// ══════════════════════════════════════════════
+//  FORECAST CHART
+// ══════════════════════════════════════════════
+function getForecast() {
+  return load(K.forecast) || { days: 7, enabled: true };
+}
+
+function renderForecastChart() {
+  const cfg = getForecast();
+  const block = document.getElementById('forecast-block');
+  if (!cfg.enabled) { block.style.display = 'none'; return; }
+  block.style.display = '';
+
+  const N = cfg.days;
+  const now = Date.now();
+  const counts = Array(N).fill(0);
+
+  Object.keys(db).forEach(w => {
+    const c = db[w];
+    if (!c.graduated || c.ignored) return;
+    const dayOffset = Math.ceil((c.due - now) / 86400000);
+    if (dayOffset >= 1 && dayOffset <= N) counts[dayOffset - 1]++;
+  });
+
+  const el = document.getElementById('forecast-chart');
+  if (counts.every(c => c === 0)) {
+    el.innerHTML = '<div class="forecast-empty">No reviews scheduled</div>';
+    return;
+  }
+
+  const max = Math.max(...counts, 1);
+  el.innerHTML = counts.map((count, i) => {
+    const heightPct = Math.max(Math.round((count / max) * 100), count > 0 ? 4 : 0);
+    const showLabel = N <= 7 || (N <= 14 && i % 2 === 0) || i % 5 === 0;
+    return `<div class="fc-bar-wrap">
+      <div class="fc-bar" style="height:${heightPct}%" title="${count} card${count!==1?'s':''} in ${i+1} day${i+1!==1?'s':''}"></div>
+      <span class="fc-label">${showLabel ? '+' + (i+1) : ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function saveForecast() {
+  const days = parseInt(document.getElementById('forecast-days').value) || 7;
+  const enabled = document.getElementById('forecast-enabled').checked;
+  save(K.forecast, { days, enabled });
+  renderForecastChart();
 }
 
 // ══════════════════════════════════════════════
@@ -1179,6 +1269,7 @@ function updateHomeUI() {
 
   drawArc(overdue.length, dueToday.length, newWords.length, 0);
   renderStreak();
+  renderForecastChart();
   renderWeakHome();
   checkExportWarn();
 }
@@ -1259,6 +1350,9 @@ function goSettings() {
   const ignoredCount = Object.values(db).filter(c => c.ignored).length;
   document.getElementById('ignored-count').textContent =
     ignoredCount ? `${ignoredCount} word${ignoredCount !== 1 ? 's' : ''} ignored` : 'No ignored words';
+  const fc = getForecast();
+  document.getElementById('forecast-days').value = fc.days;
+  document.getElementById('forecast-enabled').checked = fc.enabled;
   showScreen('settings');
 }
 
