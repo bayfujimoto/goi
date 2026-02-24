@@ -1202,6 +1202,18 @@ function ignoreFromWeak(word) {
     t.textContent = String(total);
     svg.appendChild(t);
 
+    // 合計 label in the bottom gap
+    const gapLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    gapLabel.setAttribute('x', String(CX));
+    gapLabel.setAttribute('y', String(CY + ARC.radius + ARC.thickness / 2-16));
+    gapLabel.setAttribute('text-anchor', 'middle');
+    gapLabel.setAttribute('dominant-baseline', 'hanging');
+    gapLabel.setAttribute('font-family', "'Shippori Mincho', serif");
+    gapLabel.setAttribute('font-size', '18');
+    gapLabel.setAttribute('fill', css('--muted'));
+    gapLabel.textContent = '合計';
+    svg.appendChild(gapLabel);
+
     if (total === 0) return;
 
     const degPerCard = SWEEP / total;
