@@ -942,13 +942,35 @@ applyTheme();
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
-const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps', forecast:'goi_forecast' };
+const K = { db:'goi_cards_v2', meta:'goi_meta_v2', streak:'goi_streak', export:'goi_last_export', api:'goi_api_key', theme:'goi_theme', caps:'goi_caps', forecast:'goi_forecast', session:'goi_session' };
 
 const load = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
 const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { showToast('Storage full — export your data'); } };
 
 let db       = load(K.db)     || {};
 let wordMeta = load(K.meta)   || {};
+
+function saveSession() {
+  save(K.session, {
+    date:         todayStr(),
+    sessionDone,
+    studiedWords: [...studiedWords],
+    savedQueue:   savedQueue ? savedQueue.map(c => c.word) : null,
+  });
+}
+
+function loadSession() {
+  const s = load(K.session);
+  if (!s || s.date !== todayStr()) return; // expired or missing
+  sessionDone  = s.sessionDone || 0;
+  studiedWords = new Set(s.studiedWords || []);
+  if (s.savedQueue && s.savedQueue.length) {
+    savedQueue = s.savedQueue
+      .filter(w => db[w])
+      .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
+    if (!savedQueue.length) savedQueue = null;
+  }
+}
 
 // ══════════════════════════════════════════════
 //  SRS  (SM-2)
@@ -1706,6 +1728,7 @@ function rate(q) {
     sGood++;
     sessionDone++;
     studiedWords.add(cur.word);
+    saveSession();
     const pct = sessionGoal > 0 ? Math.min(sessionDone / sessionGoal, 1.0) : 0;
     drawArc(arcOver, arcRev, arcNew, pct);
   }
@@ -1714,6 +1737,7 @@ function rate(q) {
 
 function endSession(hitCap) {
   savedQueue = null; // session completed naturally — nothing to resume
+  saveSession();    // persist studiedWords + sessionDone; clear savedQueue
   touchStreak();
   document.getElementById('done-rev').textContent   = sReviewed;
   document.getElementById('done-again').textContent = sAgain;
@@ -2021,6 +2045,7 @@ function showScreen(name) {
 
 function goHome() {
   if (queue.length > 0) savedQueue = [...queue]; // preserve remaining cards for resume
+  saveSession();
   showScreen('home');
 }
 
@@ -2232,6 +2257,7 @@ function studySingle(word) {
 }
 
 // ── INIT ──
+loadSession();
 updateHomeUI();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
