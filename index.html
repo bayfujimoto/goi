@@ -1186,6 +1186,7 @@ function ignoreFromWeak(word) {
   save(K.db, db);
   showToast(`${word} ignored`);
   renderWeakScreen();
+  if (document.getElementById('screen-wordlist').classList.contains('active')) renderWordList();
 }
 
 // ══════════════════════════════════════════════
@@ -2098,7 +2099,10 @@ function renderWordList() {
           ${jlptBadge}
         </div>
       </div>
-      <button class="wk-study" onclick="studySingle('${wEsc}')">Study</button>
+      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+        <button class="wk-study" onclick="studySingle('${wEsc}')">Study</button>
+        <button class="wk-ignore" onclick="ignoreFromWeak('${wEsc}')">Ignore</button>
+      </div>
     </div>`;
   }).join('');
 }
