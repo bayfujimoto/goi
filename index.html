@@ -452,7 +452,8 @@ body::after {
 .wk-meta  { display: flex; gap: 7px; align-items: center; margin-top: 3px; }
 .wk-lapse { font-size: 9px; padding: 2px 7px; background: var(--red-soft); color: var(--red); border: 1px solid var(--red); border-radius: 10px; transition: background 0.2s; }
 .wk-int   { font-size: 9px; color: var(--muted); }
-.wk-jlpt  { font-size: 9px; color: var(--muted); opacity: 0.7; }
+.wk-jlpt   { font-size: 9px; color: var(--muted); opacity: 0.7; }
+.wk-source { font-size: 9px; color: var(--muted); opacity: 0.7; }
 .wk-ignore { font-size: 10px; padding: 3px 8px; flex-shrink: 0; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; background: none; cursor: pointer; transition: background 0.15s, color 0.15s; }
 .wk-ignore:hover { background: var(--red-soft); color: var(--red); border-color: var(--red); }
 
@@ -787,6 +788,12 @@ body::after {
       <option value="lapses">Mistakes</option>
       <option value="jlpt">JLPT</option>
     </select>
+    <select id="wl-source" onchange="renderWordList()">
+      <option value="">All sources</option>
+    </select>
+  </div>
+  <div id="wl-study-source-wrap" style="display:none;padding:0 16px 8px;">
+    <button class="btn btn-primary btn-sm" onclick="studySource()">→ Study this source</button>
   </div>
   <div class="wl-scroll" id="wl-scroll"></div>
 </div>
@@ -1488,20 +1495,21 @@ function isNew(w) {
   return !db[w]?.graduated;
 }
 
-function buildQueue(caps) {
+function buildQueue(caps, sourceFilter = '') {
   const now = Date.now();
   const allWords = Object.keys(db);
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[wordMeta[w]?.jlpt] ?? 6);
+  const matchSrc = w => !sourceFilter || (wordMeta[w]?.source || '') === sourceFilter;
 
   // Reviews: due cards that have graduated, sorted most overdue first
   const reviews = allWords
-    .filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now)
+    .filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && matchSrc(w))
     .sort((a,b) => (db[a].due||0) - (db[b].due||0))
     .slice(0, caps.reviews);
 
   // New words: not yet graduated
   const newWords = allWords
-    .filter(w => !db[w]?.graduated && !db[w]?.ignored)
+    .filter(w => !db[w]?.graduated && !db[w]?.ignored && matchSrc(w))
     .sort(caps.newOrder === 'jlpt'
       ? (a,b) => jlptRank(a) - jlptRank(b) || (db[a].importedAt||0) - (db[b].importedAt||0)
       : (a,b) => (db[b].importedAt||0) - (db[a].importedAt||0)
@@ -2022,10 +2030,34 @@ function getWordListWords(category) {
   }
 }
 
+function populateSourceFilter() {
+  const sources = new Set();
+  Object.keys(db).forEach(w => {
+    if (!db[w]?.ignored) sources.add(wordMeta[w]?.source || '');
+  });
+  const sorted = [...sources].sort((a, b) =>
+    a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)
+  );
+  const sel = document.getElementById('wl-source');
+  sel.innerHTML = '<option value="">All sources</option>' +
+    sorted.map(s => `<option value="${s.replace(/"/g,'&quot;')}">${s || '(no source)'}</option>`).join('');
+  sel.value = '';
+}
+
+function studySource() {
+  const srcFilter = document.getElementById('wl-source').value;
+  const caps = getCaps();
+  const q = buildQueue(caps, srcFilter);
+  if (!q.length) { showToast('No cards due from this source'); return; }
+  sessionCapped = true;
+  beginSession(q);
+}
+
 function openWordList(category) {
   _wlCategory = category;
   document.getElementById('wl-search').value = '';
   document.getElementById('wl-sort').value = 'alpha';
+  populateSourceFilter();
   showScreen('wordlist');
 }
 
@@ -2036,6 +2068,8 @@ function renderWordList() {
   const now = Date.now();
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[(wordMeta[w]||{}).jlpt] ?? 6);
 
+  const srcFilter = (document.getElementById('wl-source')?.value) || '';
+
   // Filter by search query
   let filtered = q
     ? words.filter(w => {
@@ -2045,6 +2079,14 @@ function renderWordList() {
           || (m.definition||'').toLowerCase().includes(q);
       })
     : words;
+
+  // Filter by source
+  if (srcFilter !== '') {
+    filtered = filtered.filter(w => (wordMeta[w]?.source || '') === srcFilter);
+  }
+
+  // Show/hide "Study this source" button
+  document.getElementById('wl-study-source-wrap').style.display = srcFilter ? 'block' : 'none';
 
   // Sort
   filtered = filtered.slice().sort((a, b) => {
@@ -2084,6 +2126,7 @@ function renderWordList() {
       : (c.repetitions ? `rep ${c.repetitions}` : 'new');
     const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
     const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
+    const srcBadge = m.source ? `<span class="wk-source">${m.source}</span>` : '';
 
     return `<div class="wk-card" onclick="studySingle('${wEsc}')" style="cursor:pointer">
       <div class="wk-kanji">${w}</div>
@@ -2095,6 +2138,7 @@ function renderWordList() {
           <span class="wk-interval">${intLabel}</span>
           <span class="wk-ef">${efLabel}</span>
           ${jlptBadge}
+          ${srcBadge}
         </div>
       </div>
       <button class="wk-ignore" onclick="event.stopPropagation();ignoreFromWeak('${wEsc}')">Ignore</button>
