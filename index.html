@@ -1330,10 +1330,14 @@ function updateHomeUI() {
   const newWords = words.filter(w => !db[w]?.graduated && !db[w]?.ignored);
 
   // Summary row
-  const learning = words.filter(w => !db[w]?.graduated && !db[w]?.ignored && (db[w].repetitions||0) > 0);
+  const learning = words.filter(w => !db[w]?.ignored && (
+    (!db[w]?.graduated && (db[w].repetitions||0) > 0) ||
+    (db[w]?.graduated && (db[w].interval||0) < 21)
+  ));
   const mastered = words.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].interval||0) >= 21);
+  const nonIgnored = words.filter(w => !db[w]?.ignored);
 
-  document.getElementById('hs-total').textContent    = words.length;
+  document.getElementById('hs-total').textContent    = nonIgnored.length;
   document.getElementById('hs-learning').textContent = learning.length;
   document.getElementById('hs-mastered').textContent = mastered.length;
 
@@ -2009,7 +2013,10 @@ function getWordListWords(category) {
     case 'overdue':  return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now - 86400000);
     case 'review':   return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && (db[w].due||0) > now - 86400000);
     case 'new':      return all.filter(w => !db[w]?.graduated && !db[w]?.ignored);
-    case 'learning': return all.filter(w => !db[w]?.graduated && !db[w]?.ignored && (db[w].repetitions||0) > 0);
+    case 'learning': return all.filter(w => !db[w]?.ignored && (
+      (!db[w]?.graduated && (db[w].repetitions||0) > 0) ||
+      (db[w]?.graduated && (db[w].interval||0) < 21)
+    ));
     case 'mastered': return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].interval||0) >= 21);
     default:         return all.filter(w => !db[w]?.ignored);
   }
