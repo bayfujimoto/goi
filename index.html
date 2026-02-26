@@ -549,7 +549,7 @@ body::after {
   -webkit-appearance: none;
 }
 #wl-search:focus { border-color: var(--gold); }
-#wl-sort {
+#wl-sort, #wl-source {
   padding: 8px 10px;
   background: var(--paper-dark); border: 1px solid var(--border);
   border-radius: 3px; font-family: 'DM Mono', monospace;
@@ -557,7 +557,7 @@ body::after {
   transition: border-color 0.15s, background 0.2s;
   -webkit-appearance: none;
 }
-#wl-sort:focus { border-color: var(--gold); }
+#wl-sort:focus, #wl-source:focus { border-color: var(--gold); }
 
 .wl-scroll { display: flex; flex-direction: column; gap: 7px; overflow-y: auto; flex: 1; }
 
@@ -1499,7 +1499,12 @@ function buildQueue(caps, sourceFilter = '') {
   const now = Date.now();
   const allWords = Object.keys(db);
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[wordMeta[w]?.jlpt] ?? 6);
-  const matchSrc = w => !sourceFilter || (wordMeta[w]?.source || '') === sourceFilter;
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const matchSrc = w => {
+    if (!sourceFilter) return true;
+    const src = wordMeta[w]?.source || '';
+    return (isDate(src) ? '' : src) === sourceFilter;
+  };
 
   // Reviews: due cards that have graduated, sorted most overdue first
   const reviews = allWords
@@ -2031,9 +2036,13 @@ function getWordListWords(category) {
 }
 
 function populateSourceFilter() {
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   const sources = new Set();
   Object.keys(db).forEach(w => {
-    if (!db[w]?.ignored) sources.add(wordMeta[w]?.source || '');
+    if (!db[w]?.ignored) {
+      const src = wordMeta[w]?.source || '';
+      sources.add(isDate(src) ? '' : src);
+    }
   });
   const sorted = [...sources].sort((a, b) =>
     a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)
@@ -2068,6 +2077,7 @@ function renderWordList() {
   const now = Date.now();
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[(wordMeta[w]||{}).jlpt] ?? 6);
 
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   const srcFilter = (document.getElementById('wl-source')?.value) || '';
 
   // Filter by search query
@@ -2082,7 +2092,10 @@ function renderWordList() {
 
   // Filter by source
   if (srcFilter !== '') {
-    filtered = filtered.filter(w => (wordMeta[w]?.source || '') === srcFilter);
+    filtered = filtered.filter(w => {
+      const src = wordMeta[w]?.source || '';
+      return (isDate(src) ? '' : src) === srcFilter;
+    });
   }
 
   // Show/hide "Study this source" button
@@ -2126,7 +2139,8 @@ function renderWordList() {
       : (c.repetitions ? `rep ${c.repetitions}` : 'new');
     const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
     const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
-    const srcBadge = m.source ? `<span class="wk-source">${m.source}</span>` : '';
+    const srcDisplay = (m.source && !/^\d{4}-\d{2}-\d{2}$/.test(m.source)) ? m.source : '';
+    const srcBadge = srcDisplay ? `<span class="wk-source">${srcDisplay}</span>` : '';
 
     return `<div class="wk-card" onclick="studySingle('${wEsc}')" style="cursor:pointer">
       <div class="wk-kanji">${w}</div>
