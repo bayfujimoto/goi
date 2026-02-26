@@ -824,7 +824,8 @@ body::after {
   </div>
   <div class="done-actions">
     <div class="done-nudge" id="done-nudge" style="display:none"></div>
-    <button class="btn btn-ghost" id="btn-continue" onclick="continueSession()" style="display:none">→ Continue session</button>
+    <button class="btn btn-ghost" id="btn-continue-new" onclick="continueNew()"     style="display:none">→ More new words</button>
+    <button class="btn btn-ghost" id="btn-continue-rev" onclick="continueReviews()" style="display:none">→ More reviews</button>
     <button class="btn btn-primary" onclick="startStudy()">→ Study Due Again</button>
     <button class="btn btn-ghost"   onclick="goHome()">← Home</button>
   </div>
@@ -1367,10 +1368,15 @@ function updateHomeUI() {
 
   const totalDue = overdue.length + dueToday.length + newWords.length;
   const btn = document.getElementById('btn-study');
-  btn.disabled    = totalDue === 0;
-  btn.textContent = totalDue > 0
-    ? `→ Study ${cappedRev}r + ${cappedNew}n`
-    : '→ No Cards Due';
+  if (savedQueue) {
+    btn.disabled    = false;
+    btn.textContent = `→ Resume (${savedQueue.length} remaining)`;
+  } else {
+    btn.disabled    = totalDue === 0;
+    btn.textContent = totalDue > 0
+      ? `→ Study ${cappedRev}r + ${cappedNew}n`
+      : '→ No Cards Due';
+  }
 
   arcOver = overdue.length; arcRev = dueToday.length; arcNew = cappedNew;
   const todayGoal = cappedRev + cappedNew;
@@ -1505,6 +1511,8 @@ let sAgain=0, sGood=0, sReviewed=0, sTotal=0;
 let sessionCapped = false; // true when we hit the cap mid-session
 let sessionGoal=0, sessionDone=0;
 let arcOver=0, arcRev=0, arcNew=0; // arc segment counts captured at session start
+let savedQueue = null;             // non-null when a session is resumable from home
+let studiedWords = new Set();      // words successfully rated this session (for continue filtering)
 
 function isNew(w) {
   // A card is "new" if it hasn't graduated (2 consecutive correct) yet
@@ -1545,6 +1553,13 @@ function buildQueue(caps, sourceFilter = '') {
 }
 
 function startStudy() {
+  if (savedQueue) {
+    const q = savedQueue;
+    savedQueue = null;
+    sessionCapped = true;
+    resumeSession(q);
+    return;
+  }
   const caps = getCaps();
   const q = buildQueue(caps);
   if (!q.length) { showToast('No cards due right now'); return; }
@@ -1564,6 +1579,14 @@ function beginSession(words) {
   queue = words;
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
   sessionGoal = sTotal; sessionDone = 0;
+  studiedWords = new Set();
+  showScreen('study'); nextCard();
+}
+
+function resumeSession(words) {
+  queue = words;
+  sAgain=sGood=sReviewed=0; sTotal=queue.length;
+  // sessionGoal and sessionDone preserved so arc fill continues from where it was
   showScreen('study'); nextCard();
 }
 
@@ -1670,6 +1693,7 @@ function rate(q) {
   } else {
     sGood++;
     sessionDone++;
+    studiedWords.add(cur.word);
     const pct = sessionGoal > 0 ? Math.min(sessionDone / sessionGoal, 1.0) : 0;
     drawArc(arcOver, arcRev, arcNew, pct);
   }
@@ -1677,24 +1701,25 @@ function rate(q) {
 }
 
 function endSession(hitCap) {
+  savedQueue = null; // session completed naturally — nothing to resume
   touchStreak();
   document.getElementById('done-rev').textContent   = sReviewed;
   document.getElementById('done-again').textContent = sAgain;
   document.getElementById('done-good').textContent  = sGood;
 
-  // Show remaining counts for soft nudge
+  // Show remaining counts (excluding already-studied words) for split continue buttons
   const now = Date.now();
-  const remainingDue = Object.keys(db).filter(w => db[w]?.graduated && (db[w].due||0) <= now).length;
-  const remainingNew = Object.keys(db).filter(w => !db[w]?.graduated).length;
+  const remainingDue = Object.keys(db).filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && !studiedWords.has(w)).length;
+  const remainingNew = Object.keys(db).filter(w => !db[w]?.graduated && !db[w]?.ignored && !studiedWords.has(w)).length;
   const nudgeEl = document.getElementById('done-nudge');
   if (sessionCapped && (remainingDue > 0 || remainingNew > 0)) {
     nudgeEl.style.display = 'block';
     nudgeEl.textContent = `${remainingDue} reviews + ${remainingNew} new words remaining`;
-    document.getElementById('btn-continue').style.display = 'flex';
   } else {
     nudgeEl.style.display = 'none';
-    document.getElementById('btn-continue').style.display = 'none';
   }
+  document.getElementById('btn-continue-new').style.display = sessionCapped && remainingNew > 0 ? 'flex' : 'none';
+  document.getElementById('btn-continue-rev').style.display = sessionCapped && remainingDue > 0 ? 'flex' : 'none';
 
   if (window._studyReturnScreen === 'wordlist') {
     window._studyReturnScreen = null;
@@ -1705,9 +1730,32 @@ function endSession(hitCap) {
   }
 }
 
-function continueSession() {
-  // Load another capped batch
-  startStudy();
+function continueNew() {
+  const caps = getCaps();
+  const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[wordMeta[w]?.jlpt] ?? 6);
+  const words = Object.keys(db)
+    .filter(w => !db[w]?.graduated && !db[w]?.ignored && !studiedWords.has(w))
+    .sort(caps.newOrder === 'jlpt'
+      ? (a,b) => jlptRank(a) - jlptRank(b) || (db[a].importedAt||0) - (db[b].importedAt||0)
+      : (a,b) => (db[b].importedAt||0) - (db[a].importedAt||0))
+    .slice(0, caps.newWords)
+    .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
+  if (!words.length) { showToast('No more new words'); return; }
+  sessionCapped = true;
+  beginSession(words);
+}
+
+function continueReviews() {
+  const caps = getCaps();
+  const now = Date.now();
+  const words = Object.keys(db)
+    .filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && !studiedWords.has(w))
+    .sort((a,b) => (db[a].due||0) - (db[b].due||0))
+    .slice(0, caps.reviews)
+    .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
+  if (!words.length) { showToast('No more reviews due'); return; }
+  sessionCapped = true;
+  beginSession(words);
 }
 
 function updateMini() {
@@ -1959,7 +2007,10 @@ function showScreen(name) {
   if (name === 'wordlist') renderWordList();
 }
 
-function goHome() { showScreen('home'); }
+function goHome() {
+  if (queue.length > 0) savedQueue = [...queue]; // preserve remaining cards for resume
+  showScreen('home');
+}
 
 function shuffle(a) {
   for (let i=a.length-1;i>0;i--) {
