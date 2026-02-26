@@ -538,10 +538,13 @@ body::after {
 #screen-wordlist { gap: 10px; }
 
 .wl-toolbar {
-  display: flex; gap: 8px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
+}
+.wl-filters {
+  display: flex; gap: 8px;
 }
 #wl-search {
-  flex: 1; padding: 8px 10px;
+  width: 100%; padding: 8px 10px;
   background: var(--paper-dark); border: 1px solid var(--border);
   border-radius: 3px; font-family: 'DM Mono', monospace;
   font-size: 12px; color: var(--ink); outline: none;
@@ -781,16 +784,18 @@ body::after {
   </div>
   <div class="wl-toolbar">
     <input id="wl-search" type="search" placeholder="Search…" oninput="renderWordList()">
-    <select id="wl-sort" onchange="renderWordList()">
-      <option value="alpha">A–Z</option>
-      <option value="due">Due date</option>
-      <option value="interval">Interval</option>
-      <option value="lapses">Mistakes</option>
-      <option value="jlpt">JLPT</option>
-    </select>
-    <select id="wl-source" onchange="renderWordList()">
-      <option value="">All sources</option>
-    </select>
+    <div class="wl-filters">
+      <select id="wl-sort" onchange="renderWordList()">
+        <option value="alpha">A–Z</option>
+        <option value="due">Due date</option>
+        <option value="interval">Interval</option>
+        <option value="lapses">Mistakes</option>
+        <option value="jlpt">JLPT</option>
+      </select>
+      <select id="wl-source" onchange="renderWordList()">
+        <option value="">All sources</option>
+      </select>
+    </div>
   </div>
   <div id="wl-study-source-wrap" style="display:none;padding:0 16px 8px;">
     <button class="btn btn-primary btn-sm" onclick="studySource()">→ Study this source</button>
