@@ -979,8 +979,12 @@ function parseWordBank(text) {
     if (parts.length < 2) continue;
     let jlpt='', word='', furigana='', definition='', source='';
 
+    // 6-column: JLPT | Word | Furigana | Definition | Date | Source
+    if (parts.length >= 6 && /^N[1-5]$|^$/.test(parts[0])) {
+      [jlpt, word, furigana, definition, , source] = parts;
+    }
     // 5-column: JLPT | Word | Furigana | Definition | Source
-    if (parts.length >= 5 && /^N[1-5]$|^$/.test(parts[0])) {
+    else if (parts.length >= 5 && /^N[1-5]$|^$/.test(parts[0])) {
       [jlpt, word, furigana, definition, source] = parts;
     }
     // 4-column: JLPT | Word | Furigana | Definition
@@ -1499,12 +1503,7 @@ function buildQueue(caps, sourceFilter = '') {
   const now = Date.now();
   const allWords = Object.keys(db);
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[wordMeta[w]?.jlpt] ?? 6);
-  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const matchSrc = w => {
-    if (!sourceFilter) return true;
-    const src = wordMeta[w]?.source || '';
-    return (isDate(src) ? '' : src) === sourceFilter;
-  };
+  const matchSrc = w => !sourceFilter || (wordMeta[w]?.source || '') === sourceFilter;
 
   // Reviews: due cards that have graduated, sorted most overdue first
   const reviews = allWords
@@ -2036,13 +2035,9 @@ function getWordListWords(category) {
 }
 
 function populateSourceFilter() {
-  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   const sources = new Set();
   Object.keys(db).forEach(w => {
-    if (!db[w]?.ignored) {
-      const src = wordMeta[w]?.source || '';
-      sources.add(isDate(src) ? '' : src);
-    }
+    if (!db[w]?.ignored) sources.add(wordMeta[w]?.source || '');
   });
   const sorted = [...sources].sort((a, b) =>
     a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)
@@ -2077,7 +2072,6 @@ function renderWordList() {
   const now = Date.now();
   const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[(wordMeta[w]||{}).jlpt] ?? 6);
 
-  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   const srcFilter = (document.getElementById('wl-source')?.value) || '';
 
   // Filter by search query
@@ -2092,10 +2086,7 @@ function renderWordList() {
 
   // Filter by source
   if (srcFilter !== '') {
-    filtered = filtered.filter(w => {
-      const src = wordMeta[w]?.source || '';
-      return (isDate(src) ? '' : src) === srcFilter;
-    });
+    filtered = filtered.filter(w => (wordMeta[w]?.source || '') === srcFilter);
   }
 
   // Show/hide "Study this source" button
@@ -2139,8 +2130,7 @@ function renderWordList() {
       : (c.repetitions ? `rep ${c.repetitions}` : 'new');
     const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
     const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
-    const srcDisplay = (m.source && !/^\d{4}-\d{2}-\d{2}$/.test(m.source)) ? m.source : '';
-    const srcBadge = srcDisplay ? `<span class="wk-source">${srcDisplay}</span>` : '';
+    const srcBadge = m.source ? `<span class="wk-source">${m.source}</span>` : '';
 
     return `<div class="wk-card" onclick="studySingle('${wEsc}')" style="cursor:pointer">
       <div class="wk-kanji">${w}</div>
