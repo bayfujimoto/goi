@@ -2128,15 +2128,11 @@ function renderWordList() {
     const lapseBadge = (c.lapses||0) > 0
       ? `<span class="wk-lapse">${c.lapses} mistake${c.lapses!==1?'s':''}</span>`
       : '';
-    const intDays = c.graduated
-      ? Math.round((c.due - now) / 86400000)
-      : null;
-    const intLabel = intDays !== null
-      ? (intDays >= 0 ? `in ${intDays}d` : `${-intDays}d ago`)
-      : (c.repetitions ? `rep ${c.repetitions}` : 'new');
-    const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
+    const intDays = c.graduated ? Math.round((c.due - now) / 86400000) : null;
+    const intBadge = intDays !== null
+      ? `<span class="wk-interval">${intDays >= 0 ? `in ${intDays}d` : `${-intDays}d ago`}</span>`
+      : '';
     const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
-    const srcBadge = m.source ? `<span class="wk-source">${m.source}</span>` : '';
 
     return `<div class="wk-card" onclick="studySingle('${wEsc}')" style="cursor:pointer">
       <div class="wk-kanji">${w}</div>
@@ -2145,10 +2141,8 @@ function renderWordList() {
         <div class="wk-def">${m.definition||''}</div>
         <div class="wk-meta">
           ${lapseBadge}
-          <span class="wk-interval">${intLabel}</span>
-          <span class="wk-ef">${efLabel}</span>
+          ${intBadge}
           ${jlptBadge}
-          ${srcBadge}
         </div>
       </div>
       <button class="wk-ignore" onclick="event.stopPropagation();ignoreFromWeak('${wEsc}')">Ignore</button>
