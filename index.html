@@ -1358,15 +1358,16 @@ function updateHomeUI() {
   document.getElementById('hs-learning').textContent = learning.length;
   document.getElementById('hs-mastered').textContent = mastered.length;
 
+  const cappedRev = Math.min(overdue.length + dueToday.length, caps.reviews);
+  const cappedNew = Math.min(newWords.length, caps.newWords);
+
   document.getElementById('hs-overdue').textContent = overdue.length;
   document.getElementById('hs-review').textContent  = dueToday.length;
-  document.getElementById('hs-new').textContent     = newWords.length;
+  document.getElementById('hs-new').textContent     = cappedNew;
 
   const totalDue = overdue.length + dueToday.length + newWords.length;
   const btn = document.getElementById('btn-study');
   btn.disabled    = totalDue === 0;
-  const cappedRev = Math.min(overdue.length + dueToday.length, caps.reviews);
-  const cappedNew = Math.min(newWords.length, caps.newWords);
   btn.textContent = totalDue > 0
     ? `→ Study ${cappedRev}r + ${cappedNew}n`
     : '→ No Cards Due';
