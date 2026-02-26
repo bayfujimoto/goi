@@ -1575,11 +1575,22 @@ function studyAll() {
   beginSession(all.map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) })));
 }
 
+function resetCardState() {
+  const cardEl = document.getElementById('card');
+  if (!cardEl) return;
+  cardEl.style.transition = 'none';
+  cardEl.classList.remove('flipped');
+  cardEl.getBoundingClientRect(); // force reflow
+  cardEl.style.transition = '';
+  flipped = false;
+}
+
 function beginSession(words) {
   queue = words;
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
   sessionGoal = sTotal; sessionDone = 0;
   studiedWords = new Set();
+  resetCardState();
   showScreen('study'); nextCard();
 }
 
@@ -1587,6 +1598,7 @@ function resumeSession(words) {
   queue = words;
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
   // sessionGoal and sessionDone preserved so arc fill continues from where it was
+  resetCardState();
   showScreen('study'); nextCard();
 }
 
