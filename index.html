@@ -2019,7 +2019,7 @@ function getWordListWords(category) {
     case 'new':      return all.filter(w => !db[w]?.graduated && !db[w]?.ignored);
     case 'learning': return all.filter(w => !db[w]?.graduated && !db[w]?.ignored && (db[w].repetitions||0) > 0);
     case 'mastered': return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].interval||0) >= 21);
-    default:         return all;
+    default:         return all.filter(w => !db[w]?.ignored);
   }
 }
 
