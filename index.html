@@ -566,15 +566,6 @@ body::after {
 .summary-cell { cursor: pointer; transition: background 0.2s; }
 .summary-cell:active { background: var(--paper-mid); }
 
-/* Study-now button on wk-card */
-.wk-study {
-  font-size: 10px; padding: 3px 8px; flex-shrink: 0;
-  color: var(--green); border: 1px solid var(--green);
-  border-radius: 3px; background: none; cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.wk-study:active { background: var(--green); color: var(--paper); }
-
 /* Progress badges */
 .wk-interval { font-size: 9px; color: var(--muted); }
 .wk-ef       { font-size: 9px; color: var(--muted); opacity: 0.75; }
@@ -2087,7 +2078,7 @@ function renderWordList() {
     const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
     const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
 
-    return `<div class="wk-card">
+    return `<div class="wk-card" onclick="studySingle('${wEsc}')" style="cursor:pointer">
       <div class="wk-kanji">${w}</div>
       <div class="wk-info">
         <div class="wk-read">${m.furigana||''}</div>
@@ -2099,10 +2090,7 @@ function renderWordList() {
           ${jlptBadge}
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        <button class="wk-study" onclick="studySingle('${wEsc}')">Study</button>
-        <button class="wk-ignore" onclick="ignoreFromWeak('${wEsc}')">Ignore</button>
-      </div>
+      <button class="wk-ignore" onclick="event.stopPropagation();ignoreFromWeak('${wEsc}')">Ignore</button>
     </div>`;
   }).join('');
 }
