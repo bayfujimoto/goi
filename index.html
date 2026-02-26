@@ -1371,7 +1371,10 @@ function updateHomeUI() {
     ? `→ Study ${cappedRev}r + ${cappedNew}n`
     : '→ No Cards Due';
 
-  drawArc(overdue.length, dueToday.length, newWords.length, 0);
+  arcOver = overdue.length; arcRev = dueToday.length; arcNew = cappedNew;
+  const todayGoal = cappedRev + cappedNew;
+  const todayPct = todayGoal > 0 ? Math.min(sessionDone / todayGoal, 1.0) : 0;
+  drawArc(arcOver, arcRev, arcNew, todayPct);
   renderStreak();
   renderForecastChart();
   renderWeakHome();
@@ -1499,6 +1502,8 @@ function getCaps() {
 let queue=[], cur=null, flipped=false;
 let sAgain=0, sGood=0, sReviewed=0, sTotal=0;
 let sessionCapped = false; // true when we hit the cap mid-session
+let sessionGoal=0, sessionDone=0;
+let arcOver=0, arcRev=0, arcNew=0; // arc segment counts captured at session start
 
 function isNew(w) {
   // A card is "new" if it hasn't graduated (2 consecutive correct) yet
@@ -1557,6 +1562,7 @@ function studyAll() {
 function beginSession(words) {
   queue = words;
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
+  sessionGoal = sTotal; sessionDone = 0;
   showScreen('study'); nextCard();
 }
 
@@ -1659,8 +1665,12 @@ function rate(q) {
     // (graduated cards get rescheduled by SRS, but in same session we re-show once)
     queue.splice(Math.min(3,queue.length), 0, { ...cur, ...db[cur.word] });
     sTotal++;
+    sessionGoal++;
   } else {
     sGood++;
+    sessionDone++;
+    const pct = sessionGoal > 0 ? Math.min(sessionDone / sessionGoal, 1.0) : 0;
+    drawArc(arcOver, arcRev, arcNew, pct);
   }
   nextCard();
 }
