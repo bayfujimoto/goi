@@ -531,6 +531,54 @@ body::after {
 .danger-title { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); }
 .danger-desc  { font-size: 11px; color: var(--muted); line-height: 1.5; }
 
+/* ══════════════════════════════════════════
+   WORD LIST SCREEN
+══════════════════════════════════════════ */
+#screen-wordlist { gap: 10px; }
+
+.wl-toolbar {
+  display: flex; gap: 8px; flex-shrink: 0;
+}
+#wl-search {
+  flex: 1; padding: 8px 10px;
+  background: var(--paper-dark); border: 1px solid var(--border);
+  border-radius: 3px; font-family: 'DM Mono', monospace;
+  font-size: 12px; color: var(--ink); outline: none;
+  transition: border-color 0.15s, background 0.2s;
+  -webkit-appearance: none;
+}
+#wl-search:focus { border-color: var(--gold); }
+#wl-sort {
+  padding: 8px 10px;
+  background: var(--paper-dark); border: 1px solid var(--border);
+  border-radius: 3px; font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--ink); outline: none; cursor: pointer;
+  transition: border-color 0.15s, background 0.2s;
+  -webkit-appearance: none;
+}
+#wl-sort:focus { border-color: var(--gold); }
+
+.wl-scroll { display: flex; flex-direction: column; gap: 7px; overflow-y: auto; flex: 1; }
+
+/* Tappable stat cells */
+.arc-stat   { cursor: pointer; border-radius: 3px; transition: background 0.12s; }
+.arc-stat:active { background: var(--paper-dark); }
+.summary-cell { cursor: pointer; transition: background 0.2s; }
+.summary-cell:active { background: var(--paper-mid); }
+
+/* Study-now button on wk-card */
+.wk-study {
+  font-size: 10px; padding: 3px 8px; flex-shrink: 0;
+  color: var(--green); border: 1px solid var(--green);
+  border-radius: 3px; background: none; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.wk-study:active { background: var(--green); color: var(--paper); }
+
+/* Progress badges */
+.wk-interval { font-size: 9px; color: var(--muted); }
+.wk-ef       { font-size: 9px; color: var(--muted); opacity: 0.75; }
+
 /* ══ TOAST ══ */
 .toast {
   position: fixed; bottom: calc(var(--safe-bottom) + 20px); left: 50%;
@@ -563,15 +611,15 @@ body::after {
   <div class="arc-block">
     <div class="ring-layout">
       <div class="arc-stats">
-        <div class="arc-stat">
+        <div class="arc-stat" onclick="openWordList('overdue')" title="View overdue words">
           <span class="arc-stat-value val-overdue" id="hs-overdue">0</span>
           <span class="arc-stat-label lbl-overdue">Overdue</span>
         </div>
-        <div class="arc-stat">
+        <div class="arc-stat" onclick="openWordList('review')" title="View words due today">
           <span class="arc-stat-value val-review" id="hs-review">0</span>
           <span class="arc-stat-label lbl-review">Review</span>
         </div>
-        <div class="arc-stat">
+        <div class="arc-stat" onclick="openWordList('new')" title="View new words">
           <span class="arc-stat-value val-new" id="hs-new">0</span>
           <span class="arc-stat-label lbl-new">New</span>
         </div>
@@ -584,15 +632,15 @@ body::after {
 
   <!-- Summary stats -->
   <div class="summary-row">
-    <div class="summary-cell">
+    <div class="summary-cell" onclick="openWordList('total')" title="View all words">
       <span class="summary-label">Total</span>
       <span class="summary-value" id="hs-total">0</span>
     </div>
-    <div class="summary-cell">
+    <div class="summary-cell" onclick="openWordList('learning')" title="View learning words">
       <span class="summary-label">Learning</span>
       <span class="summary-value" id="hs-learning">0</span>
     </div>
-    <div class="summary-cell">
+    <div class="summary-cell" onclick="openWordList('mastered')" title="View mastered words">
       <span class="summary-label">Mastered</span>
       <span class="summary-value" id="hs-mastered">0</span>
     </div>
@@ -731,6 +779,25 @@ body::after {
     <span class="screen-title">Ignored Words</span>
   </div>
   <div class="weak-scroll" id="ignored-scroll"></div>
+</div>
+
+<!-- ══ WORD LIST ══ -->
+<div id="screen-wordlist" class="screen">
+  <div class="screen-header">
+    <button class="btn btn-ghost btn-sm" onclick="goHome()">← Home</button>
+    <span class="screen-title" id="wl-title">Words</span>
+  </div>
+  <div class="wl-toolbar">
+    <input id="wl-search" type="search" placeholder="Search…" oninput="renderWordList()">
+    <select id="wl-sort" onchange="renderWordList()">
+      <option value="alpha">A–Z</option>
+      <option value="due">Due date</option>
+      <option value="interval">Interval</option>
+      <option value="lapses">Mistakes</option>
+      <option value="jlpt">JLPT</option>
+    </select>
+  </div>
+  <div class="wl-scroll" id="wl-scroll"></div>
 </div>
 
 <!-- ══ DONE ══ -->
@@ -1604,7 +1671,13 @@ function endSession(hitCap) {
     document.getElementById('btn-continue').style.display = 'none';
   }
 
-  showScreen('done');
+  if (window._studyReturnScreen === 'wordlist') {
+    window._studyReturnScreen = null;
+    renderWordList();
+    showScreen('wordlist');
+  } else {
+    showScreen('done');
+  }
 }
 
 function continueSession() {
@@ -1858,6 +1931,7 @@ function showScreen(name) {
   document.getElementById('screen-' + name).classList.add('active');
   if (name === 'weak') renderWeakScreen();
   if (name === 'home') updateHomeUI();
+  if (name === 'wordlist') renderWordList();
 }
 
 function goHome() { showScreen('home'); }
@@ -1920,6 +1994,120 @@ function restoreIgnored(word) {
     countEl.textContent = n ? `${n} word${n !== 1 ? 's' : ''} ignored` : 'No ignored words';
   }
   showToast(`${word} restored`);
+}
+
+// ══════════════════════════════════════════════
+//  WORD LIST SCREEN
+// ══════════════════════════════════════════════
+let _wlCategory = 'total';
+
+const WL_LABELS = {
+  overdue:  'Overdue',
+  review:   'Due Today',
+  new:      'New',
+  learning: 'Learning',
+  mastered: 'Mastered',
+  total:    'All Words',
+};
+
+function getWordListWords(category) {
+  const now = Date.now();
+  const all = Object.keys(db);
+  switch (category) {
+    case 'overdue':  return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now - 86400000);
+    case 'review':   return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].due||0) <= now && (db[w].due||0) > now - 86400000);
+    case 'new':      return all.filter(w => !db[w]?.graduated && !db[w]?.ignored);
+    case 'learning': return all.filter(w => !db[w]?.graduated && !db[w]?.ignored && (db[w].repetitions||0) > 0);
+    case 'mastered': return all.filter(w => db[w]?.graduated && !db[w]?.ignored && (db[w].interval||0) >= 21);
+    default:         return all;
+  }
+}
+
+function openWordList(category) {
+  _wlCategory = category;
+  document.getElementById('wl-search').value = '';
+  document.getElementById('wl-sort').value = 'alpha';
+  showScreen('wordlist');
+}
+
+function renderWordList() {
+  const words = getWordListWords(_wlCategory);
+  const q = (document.getElementById('wl-search').value || '').toLowerCase();
+  const sort = document.getElementById('wl-sort').value;
+  const now = Date.now();
+  const jlptRank = w => ({ N5:1, N4:2, N3:3, N2:4, N1:5 }[(wordMeta[w]||{}).jlpt] ?? 6);
+
+  // Filter by search query
+  let filtered = q
+    ? words.filter(w => {
+        const m = wordMeta[w] || {};
+        return w.includes(q)
+          || (m.furigana||'').toLowerCase().includes(q)
+          || (m.definition||'').toLowerCase().includes(q);
+      })
+    : words;
+
+  // Sort
+  filtered = filtered.slice().sort((a, b) => {
+    switch (sort) {
+      case 'due':      return (db[a].due||0) - (db[b].due||0);
+      case 'interval': return (db[b].interval||0) - (db[a].interval||0);
+      case 'lapses':   return (db[b].lapses||0) - (db[a].lapses||0);
+      case 'jlpt':     return jlptRank(a) - jlptRank(b) || a.localeCompare(b);
+      default:         return a.localeCompare(b);
+    }
+  });
+
+  // Title
+  const label = WL_LABELS[_wlCategory] || 'Words';
+  document.getElementById('wl-title').textContent = `${label} (${filtered.length})`;
+
+  const el = document.getElementById('wl-scroll');
+  if (!filtered.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;font-size:12px;color:var(--muted)">No words found.</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map(w => {
+    const m = wordMeta[w] || {};
+    const c = db[w] || {};
+    const wEsc = w.replace(/'/g, "\\'");
+
+    // Progress badges
+    const lapseBadge = (c.lapses||0) > 0
+      ? `<span class="wk-lapse">${c.lapses} mistake${c.lapses!==1?'s':''}</span>`
+      : '';
+    const intDays = c.graduated
+      ? Math.round((c.due - now) / 86400000)
+      : null;
+    const intLabel = intDays !== null
+      ? (intDays >= 0 ? `in ${intDays}d` : `${-intDays}d ago`)
+      : (c.repetitions ? `rep ${c.repetitions}` : 'new');
+    const efLabel = c.easeFactor ? `ef ${c.easeFactor.toFixed(1)}` : '';
+    const jlptBadge = m.jlpt ? `<span class="wk-jlpt">${m.jlpt}</span>` : '';
+
+    return `<div class="wk-card">
+      <div class="wk-kanji">${w}</div>
+      <div class="wk-info">
+        <div class="wk-read">${m.furigana||''}</div>
+        <div class="wk-def">${m.definition||''}</div>
+        <div class="wk-meta">
+          ${lapseBadge}
+          <span class="wk-interval">${intLabel}</span>
+          <span class="wk-ef">${efLabel}</span>
+          ${jlptBadge}
+        </div>
+      </div>
+      <button class="wk-study" onclick="studySingle('${wEsc}')">Study</button>
+    </div>`;
+  }).join('');
+}
+
+function studySingle(word) {
+  if (!db[word]) return;
+  window._studyReturnScreen = 'wordlist';
+  sessionCapped = false;
+  beginSession([{ word, ...(wordMeta[word]||{}), ...(db[word]||{}) }]);
 }
 
 // ── INIT ──
