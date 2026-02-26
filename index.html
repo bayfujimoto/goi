@@ -1280,26 +1280,33 @@ function ignoreFromWeak(word) {
     return l;
   };
 
-  window.drawArc = function(nOver, nRev, nNew, donePct) {
+  window.drawArc = function(nOver, nRev, nNew, donePct, nDone) {
+    nDone = nDone || 0;
     const svg = document.getElementById('arc-svg');
     if (!svg) return;
     svg.innerHTML = '';
     svg.appendChild(mkPath(arcPath(R_OUTER, R_INNER, START, END), css('--seg-track')));
 
     const total = nOver + nRev + nNew;
+    const exceeded = nDone > total;
 
-    // Center number — always rendered
-    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('x', String(CX));
-    t.setAttribute('y', String(CY));
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('dominant-baseline', 'central');
-    t.setAttribute('font-family', "'Shippori Mincho', serif");
-    t.setAttribute('font-size', '36');
-    t.setAttribute('font-weight', '600');
-    t.setAttribute('fill', css('--ink'));
-    t.textContent = String(total);
-    svg.appendChild(t);
+    // Center: studied count (top, large) + "/ total" (bottom, small)
+    const mkTxt = (x, y, size, weight, fill, baseline, content) => {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      el.setAttribute('x', String(x));
+      el.setAttribute('y', String(y));
+      el.setAttribute('text-anchor', 'middle');
+      el.setAttribute('dominant-baseline', baseline);
+      el.setAttribute('font-family', "'Shippori Mincho', serif");
+      el.setAttribute('font-size', String(size));
+      el.setAttribute('font-weight', String(weight));
+      el.setAttribute('fill', fill);
+      el.textContent = content;
+      return el;
+    };
+    svg.appendChild(mkTxt(CX, CY - 8, exceeded ? 34 : 30, 600,
+      exceeded ? css('--seg-done') : css('--ink'), 'auto', String(nDone)));
+    svg.appendChild(mkTxt(CX, CY + 13, 15, 400, css('--muted'), 'auto', `/ ${total}`));
 
     // 合計 label in the bottom gap
     const gapLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -1403,7 +1410,7 @@ function updateHomeUI() {
   arcOver = overdue.length; arcRev = dueToday.length; arcNew = cappedNew;
   const todayGoal = cappedRev + cappedNew;
   const todayPct = todayGoal > 0 ? Math.min(sessionDone / todayGoal, 1.0) : 0;
-  drawArc(arcOver, arcRev, arcNew, todayPct);
+  drawArc(arcOver, arcRev, arcNew, todayPct, studiedWords.size);
   renderStreak();
   renderForecastChart();
   renderWeakHome();
@@ -1730,7 +1737,7 @@ function rate(q) {
     studiedWords.add(cur.word);
     saveSession();
     const pct = sessionGoal > 0 ? Math.min(sessionDone / sessionGoal, 1.0) : 0;
-    drawArc(arcOver, arcRev, arcNew, pct);
+    drawArc(arcOver, arcRev, arcNew, pct, studiedWords.size);
   }
   nextCard();
 }
