@@ -824,8 +824,9 @@ body::after {
   </div>
   <div class="done-actions">
     <div class="done-nudge" id="done-nudge" style="display:none"></div>
-    <button class="btn btn-ghost" id="btn-continue-new" onclick="continueNew()"     style="display:none">→ More new words</button>
-    <button class="btn btn-ghost" id="btn-continue-rev" onclick="continueReviews()" style="display:none">→ More reviews</button>
+    <button class="btn btn-ghost" id="btn-review-again" onclick="studyAgain()"       style="display:none">→ Review Again</button>
+    <button class="btn btn-ghost" id="btn-continue-new" onclick="continueNew()"     style="display:none">→ Study New Words</button>
+    <button class="btn btn-ghost" id="btn-continue-rev" onclick="continueReviews()" style="display:none">→ More Reviews</button>
     <button class="btn btn-primary" onclick="startStudy()">→ Study Due Again</button>
     <button class="btn btn-ghost"   onclick="goHome()">← Home</button>
   </div>
@@ -1542,6 +1543,7 @@ let sessionGoal=0, sessionDone=0;
 let arcOver=0, arcRev=0, arcNew=0; // arc segment counts captured at session start
 let savedQueue = null;             // non-null when a session is resumable from home
 let studiedWords = new Set();      // words successfully rated this session (for continue filtering)
+let againWords = new Set();        // words rated Again this session — for "Review Again" button
 
 function isNew(w) {
   // A card is "new" if it hasn't graduated (2 consecutive correct) yet
@@ -1619,6 +1621,7 @@ function beginSession(words) {
   sAgain=sGood=sReviewed=0; sTotal=queue.length;
   sessionGoal = sTotal; sessionDone = 0;
   studiedWords = new Set();
+  againWords = new Set();
   resetCardState();
   showScreen('study'); nextCard();
 }
@@ -1726,6 +1729,7 @@ function rate(q) {
   sReviewed++;
   if (q === 0) {
     sAgain++;
+    againWords.add(cur.word);
     // Re-insert Again cards near front only if not graduated yet
     // (graduated cards get rescheduled by SRS, but in same session we re-show once)
     queue.splice(Math.min(3,queue.length), 0, { ...cur, ...db[cur.word] });
@@ -1744,6 +1748,21 @@ function rate(q) {
 
 function endSession(hitCap) {
   savedQueue = null; // session completed naturally — nothing to resume
+
+  // If returning from a word-list preview, restore pre-preview state before saving
+  if (window._studyReturnScreen === 'wordlist' && window._studySnapshot) {
+    const s = window._studySnapshot;
+    sessionDone   = s.sessionDone;
+    sessionGoal   = s.sessionGoal;
+    studiedWords  = s.studiedWords;
+    againWords    = s.againWords;
+    arcOver       = s.arcOver;
+    arcRev        = s.arcRev;
+    arcNew        = s.arcNew;
+    sessionCapped = s.sessionCapped;
+    window._studySnapshot = null;
+  }
+
   saveSession();    // persist studiedWords + sessionDone; clear savedQueue
   touchStreak();
   document.getElementById('done-rev').textContent   = sReviewed;
@@ -1761,6 +1780,7 @@ function endSession(hitCap) {
   } else {
     nudgeEl.style.display = 'none';
   }
+  document.getElementById('btn-review-again').style.display = againWords.size > 0 ? 'flex' : 'none';
   document.getElementById('btn-continue-new').style.display = sessionCapped && remainingNew > 0 ? 'flex' : 'none';
   document.getElementById('btn-continue-rev').style.display = sessionCapped && remainingDue > 0 ? 'flex' : 'none';
 
@@ -1771,6 +1791,16 @@ function endSession(hitCap) {
   } else {
     showScreen('done');
   }
+}
+
+function studyAgain() {
+  const words = [...againWords]
+    .filter(w => db[w])
+    .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
+  if (!words.length) { showToast('No words to review'); return; }
+  againWords = new Set(); // clear so button hides; re-populates if user presses Again again
+  sessionCapped = true;
+  resumeSession(words);  // arc and studiedWords accumulate
 }
 
 function continueNew() {
@@ -1785,7 +1815,7 @@ function continueNew() {
     .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
   if (!words.length) { showToast('No more new words'); return; }
   sessionCapped = true;
-  beginSession(words);
+  resumeSession(words);  // arc and studiedWords accumulate
 }
 
 function continueReviews() {
@@ -1798,7 +1828,7 @@ function continueReviews() {
     .map(w => ({ word:w, ...(wordMeta[w]||{}), ...(db[w]||{}) }));
   if (!words.length) { showToast('No more reviews due'); return; }
   sessionCapped = true;
-  beginSession(words);
+  resumeSession(words);  // arc and studiedWords accumulate
 }
 
 function updateMini() {
@@ -2259,6 +2289,14 @@ function renderWordList() {
 function studySingle(word) {
   if (!db[word]) return;
   window._studyReturnScreen = 'wordlist';
+  // Snapshot current session state so the arc and progress are restored after the preview
+  window._studySnapshot = {
+    sessionDone, sessionGoal,
+    studiedWords: new Set(studiedWords),
+    againWords:   new Set(againWords),
+    arcOver, arcRev, arcNew,
+    sessionCapped,
+  };
   sessionCapped = false;
   beginSession([{ word, ...(wordMeta[word]||{}), ...(db[word]||{}) }]);
 }
